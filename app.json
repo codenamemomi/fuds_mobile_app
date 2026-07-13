@@ -8,7 +8,11 @@
     "scheme": "fudsmobileapp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/icon.png"
+      "icon": "./assets/images/icon.png",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "FUDS uses your location to suggest a delivery address. You can always edit it before saving — GPS is often slightly off for Nigerian estates and gates.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "FUDS uses your location to suggest a delivery address while you use the app."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +21,11 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -34,6 +42,13 @@
         }
       ],
       "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "FUDS uses your location to suggest a delivery address. You can always edit it before saving — GPS is often slightly off for Nigerian estates and gates.",
+          "isAndroidForegroundServiceEnabled": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

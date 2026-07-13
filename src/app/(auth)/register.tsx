@@ -21,9 +21,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FudsButton } from '@/components/ui/fuds-button';
 import { FudsInput } from '@/components/ui/fuds-input';
+import { PasswordChecklist } from '@/components/ui/password-checklist';
 import { StepDots } from '@/components/ui/step-dots';
 import { FudsColors, FudsRadius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
+import { safeGoBack } from '@/lib/navigation';
+import { isPasswordStrong, passwordError, passwordsMatch } from '@/lib/password';
 
 export default function RegisterScreen() {
   const { register } = useAuth();
@@ -32,20 +35,27 @@ export default function RegisterScreen() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const phoneRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
+  const confirmRef = useRef<TextInput>(null);
 
   function validate() {
     const errs: Record<string, string> = {};
     if (fullname.trim().length < 2) errs.fullname = 'Enter your full name';
     if (phone.replace(/\D/g, '').length < 7) errs.phone = 'Enter a valid phone number';
     if (!email.includes('@')) errs.email = 'Enter a valid email address';
-    if (password.length < 8) errs.password = 'Password must be at least 8 characters';
+    const strength = passwordError(password);
+    if (strength) errs.password = strength;
+    if (!passwordsMatch(password, passwordConfirm)) {
+      errs.password_confirm = 'Passwords do not match';
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   }
@@ -59,6 +69,7 @@ export default function RegisterScreen() {
         phone: `+234${phone.replace(/\D/g, '')}`,
         email: email.trim().toLowerCase(),
         password,
+        password_confirm: passwordConfirm,
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Registration failed. Please try again.';
@@ -81,7 +92,10 @@ export default function RegisterScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => safeGoBack('/(auth)/login')}
+            >
               <Text style={styles.backArrow}>←</Text>
             </TouchableOpacity>
             <StepDots current={1} />
@@ -155,12 +169,12 @@ export default function RegisterScreen() {
             <FudsInput
               ref={passwordRef}
               label="Password"
-              placeholder="Min. 8 characters"
+              placeholder="Create a strong password"
               secureTextEntry={!showPassword}
-              returnKeyType="done"
+              returnKeyType="next"
               value={password}
               onChangeText={setPassword}
-              onSubmitEditing={handleRegister}
+              onSubmitEditing={() => confirmRef.current?.focus()}
               error={errors.password}
               leftContent={<Text style={styles.fieldIcon}>🔒</Text>}
               rightContent={
@@ -172,6 +186,29 @@ export default function RegisterScreen() {
                 </Text>
               }
             />
+
+            <FudsInput
+              ref={confirmRef}
+              label="Confirm password"
+              placeholder="Re-enter your password"
+              secureTextEntry={!showConfirm}
+              returnKeyType="done"
+              value={passwordConfirm}
+              onChangeText={setPasswordConfirm}
+              onSubmitEditing={handleRegister}
+              error={errors.password_confirm}
+              leftContent={<Text style={styles.fieldIcon}>🔒</Text>}
+              rightContent={
+                <Text
+                  style={styles.togglePassword}
+                  onPress={() => setShowConfirm((v) => !v)}
+                >
+                  {showConfirm ? 'Hide' : 'Show'}
+                </Text>
+              }
+            />
+
+            <PasswordChecklist password={password} confirm={passwordConfirm} />
           </View>
 
           {/* CTA */}
@@ -179,6 +216,7 @@ export default function RegisterScreen() {
             <FudsButton
               label="Create Account →"
               loading={loading}
+              disabled={!isPasswordStrong(password) || !passwordsMatch(password, passwordConfirm)}
               onPress={handleRegister}
             />
             <Text style={styles.terms}>

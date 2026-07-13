@@ -20,6 +20,8 @@ interface FudsButtonProps extends TouchableOpacityProps {
   loading?: boolean;
   variant?: 'primary' | 'ghost';
   rightIcon?: React.ReactNode;
+  /** When true, button is non-interactive (also when loading). */
+  disabled?: boolean;
 }
 
 export function FudsButton({

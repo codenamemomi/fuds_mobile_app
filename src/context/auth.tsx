@@ -43,8 +43,17 @@ interface AuthContextValue {
   /** Called on login — stores token, navigates to (app) */
   signIn: (payload: LoginPayload) => Promise<void>;
 
-  /** Updates profile, navigates to (app) */
-  updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
+  /**
+   * Updates profile. By default navigates to (app) (onboarding flow).
+   * Pass `{ navigate: false }` when saving address from Home so the user stays put.
+   */
+  updateProfile: (
+    payload: UpdateProfilePayload,
+    options?: { navigate?: boolean }
+  ) => Promise<void>;
+
+  /** Re-fetch GET /auth/me into context (no navigation). */
+  refreshUser: () => Promise<UserRead | null>;
 
   /** Logs out, clears token, navigates to (auth) */
   signOut: () => Promise<void>;
@@ -77,8 +86,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const register = useCallback(async (payload: RegisterPayload) => {
-    const { access_token } = await authApi.register(payload);
+    const { access_token, user: registeredUser } = await authApi.register(payload);
     await saveToken(access_token);
+    // Keep registration name/email/phone in context for OTP + profile-setup
+    setUser(registeredUser);
     // Navigate to OTP screen, passing email via params
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     router.push({ pathname: '/(auth)/verify-otp' as any, params: { email: payload.email } });
@@ -86,6 +97,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const verifyOtp = useCallback(async (payload: VerifyOtpPayload) => {
     await authApi.verifyOtp(payload);
+    // Refresh user so profile-setup has the registration fullname locked in
+    try {
+      const me = await authApi.getMe();
+      setUser(me);
+    } catch {
+      // Keep existing context user if /me fails
+    }
     // After verification, go to profile setup
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     router.push({ pathname: '/(auth)/profile-setup' as any, params: { email: payload.email } });
@@ -102,10 +120,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.replace('/(app)' as any);
   }, []);
 
-  const updateProfile = useCallback(async (payload: UpdateProfilePayload) => {
-    const updated = await authApi.updateProfile(payload);
-    setUser(updated);
-    router.replace('/(app)' as any);
+  const updateProfile = useCallback(
+    async (payload: UpdateProfilePayload, options?: { navigate?: boolean }) => {
+      const updated = await authApi.updateProfile(payload);
+      setUser(updated);
+      if (options?.navigate !== false) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        router.replace('/(app)' as any);
+      }
+    },
+    []
+  );
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const me = await authApi.getMe();
+      setUser(me);
+      return me;
+    } catch {
+      return null;
+    }
   }, []);
 
   const signOut = useCallback(async () => {
@@ -129,9 +163,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       resendOtp,
       signIn,
       updateProfile,
+      refreshUser,
       signOut,
     }),
-    [user, isLoading, register, verifyOtp, resendOtp, signIn, updateProfile, signOut]
+    [user, isLoading, register, verifyOtp, resendOtp, signIn, updateProfile, refreshUser, signOut]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -9,8 +9,8 @@ import { Platform } from 'react-native';
 
 // ─── FUDS Brand Colors ────────────────────────────────────────────────────────
 
-/** Brand tokens from FUDS Food Delivery App-cursor-projects design system */
-export const FudsColors = {
+/** Brand tokens from FUDS Food Delivery App-cursor-projects design system (light) */
+export const FudsColorsLight = {
   background: '#F1EFE8',
   foreground: '#085041',
   tertiary: '#085041',
@@ -32,6 +32,35 @@ export const FudsColors = {
   openText: '#059669',
   amber: '#F59E0B',
 } as const;
+
+/** Dark brand palette (same keys as light) for ThemeProvider */
+export const FudsColorsDark = {
+  background: '#0B1F1A',
+  foreground: '#E8F5F0',
+  tertiary: '#0F2E26',
+  primary: '#2BC48A',
+  primaryForeground: '#06211A',
+  secondary: '#1A4D3E',
+  secondaryForeground: '#9FE1CB',
+  muted: '#16352C',
+  mutedForeground: '#8FA89F',
+  accent: '#1E4A3C',
+  accentForeground: '#CFE2D6',
+  card: '#122B24',
+  cardForeground: '#E8F5F0',
+  destructive: '#F87171',
+  border: '#1F4036',
+  input: '#1F4036',
+  ring: '#2BC48A',
+  openBg: '#0F3D2E',
+  openText: '#6EE7B7',
+  amber: '#FBBF24',
+} as const;
+
+export type FudsColorPalette = { readonly [K in keyof typeof FudsColorsLight]: string };
+
+/** Default export for screens not yet on ThemeProvider (light brand) */
+export const FudsColors: FudsColorPalette = FudsColorsLight;
 
 /** Promo images used in the HTML mockups */
 export const FudsImages = {

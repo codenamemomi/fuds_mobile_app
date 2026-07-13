@@ -1,16 +1,17 @@
 import { Redirect, Stack } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
-import { FudsColors } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
+import { useFudsTheme } from '@/context/theme';
 
 export default function AppLayout() {
   const { isSignedIn, isLoading } = useAuth();
+  const { colors } = useFudsTheme();
 
   if (isLoading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color={FudsColors.primary} />
+      <View style={[styles.loader, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -24,11 +25,15 @@ export default function AppLayout() {
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: FudsColors.background },
+        contentStyle: { backgroundColor: colors.background },
       }}
     >
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="vendor/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="settings" options={{ headerShown: false }} />
+      <Stack.Screen name="password-security" options={{ headerShown: false }} />
+      <Stack.Screen name="payment-settings" options={{ headerShown: false }} />
+      <Stack.Screen name="privacy-permissions" options={{ headerShown: false }} />
     </Stack>
   );
 }
@@ -36,7 +41,6 @@ export default function AppLayout() {
 const styles = StyleSheet.create({
   loader: {
     flex: 1,
-    backgroundColor: FudsColors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },

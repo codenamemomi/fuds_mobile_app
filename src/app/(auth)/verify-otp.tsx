@@ -24,6 +24,7 @@ import { FudsButton } from '@/components/ui/fuds-button';
 import { StepDots } from '@/components/ui/step-dots';
 import { FudsColors, FudsRadius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
+import { safeGoBack } from '@/lib/navigation';
 
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 60;
@@ -119,7 +120,10 @@ export default function VerifyOtpScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => safeGoBack('/(auth)/register')}
+          >
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
           <StepDots current={2} />

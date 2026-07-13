@@ -1,29 +1,77 @@
-import { Icon, NativeTabs } from 'expo-router/unstable-native-tabs';
+import { Ionicons } from '@expo/vector-icons';
+import { Tabs } from 'expo-router';
+import { Platform, StyleSheet } from 'react-native';
 
-import { FudsColors } from '@/constants/theme';
+import { useFudsTheme } from '@/context/theme';
 
 export default function TabsLayout() {
+  const { colors } = useFudsTheme();
+
   return (
-    <NativeTabs tintColor={FudsColors.primary} backgroundColor={FudsColors.background}>
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
-        <Icon sf={{ default: 'house', selected: 'house.fill' }} md="home" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="cart">
-        <NativeTabs.Trigger.Label>Cart</NativeTabs.Trigger.Label>
-        <Icon sf={{ default: 'cart', selected: 'cart.fill' }} md="shopping_cart" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="schedule">
-        <NativeTabs.Trigger.Label>Schedule</NativeTabs.Trigger.Label>
-        <Icon sf="calendar" md="calendar_month" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="profile">
-        <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
-        <Icon sf={{ default: 'person', selected: 'person.fill' }} md="person" />
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.mutedForeground,
+        tabBarStyle: {
+          backgroundColor: colors.card,
+          borderTopColor: colors.border,
+          borderTopWidth: StyleSheet.hairlineWidth * 2,
+          elevation: 16,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.1,
+          shadowRadius: 10,
+          opacity: 1,
+          height: Platform.OS === 'ios' ? 88 : 64,
+          paddingTop: 6,
+          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+        },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+        },
+        tabBarItemStyle: {
+          paddingTop: 2,
+        },
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home" size={size ?? 22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="orders"
+        options={{
+          title: 'Orders',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="receipt" size={size ?? 22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="schedule"
+        options={{
+          title: 'Schedule',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="calendar" size={size ?? 22} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person" size={size ?? 22} color={color} />
+          ),
+        }}
+      />
+    </Tabs>
   );
 }

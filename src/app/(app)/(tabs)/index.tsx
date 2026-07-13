@@ -1,6 +1,6 @@
 /**
- * Home Screen — UI aligned with FUDS Food Delivery App mockups.
- * Vendor data from GET /browse/vendors.
+ * Home — Glovo/Chowdeck-inspired layout for FUDS Lagos.
+ * Animations are limited to the category section only.
  */
 
 import { router } from 'expo-router';
@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,12 +16,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import { browseApi, isVendorOpen, type Vendor } from '@/lib/api';
+import { AddressEditModal } from '@/components/ui/address-edit-modal';
+import { AnimatedPressable } from '@/components/ui/animated-pressable';
+import { FadeIn as FadeInView } from '@/components/ui/fade-in';
+import { FALLBACK_CATEGORIES, getCategoryVisual } from '@/constants/browse';
 import {
-  BottomTabInset,
   FudsColors,
   FudsImages,
   FudsRadius,
@@ -30,9 +31,16 @@ import {
   Spacing,
 } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
+import {
+  browseApi,
+  isVendorOpen,
+  type BrowseCategory,
+  type Product,
+  type Vendor,
+} from '@/lib/api';
 
-function formatCategory(category: string | null): string {
-  if (!category) return 'Vendor';
+function formatCategory(category: string | null | undefined): string {
+  if (!category) return 'Store';
   return category
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -44,223 +52,309 @@ function formatHours(time: string | null): string {
   return time.slice(0, 5);
 }
 
-export default function HomeScreen() {
-  const { user } = useAuth();
-  const insets = useSafeAreaInsets();
-  const tabClearance = BottomTabInset + (Platform.OS === 'android' ? Math.max(insets.bottom, 8) : 0);
+function reopenLabel(vendor: Vendor): string {
+  if (vendor.opening_time) return `Reopens at ${formatHours(vendor.opening_time)}`;
+  return 'Currently closed';
+}
 
+export default function HomeScreen() {
+  const { user, updateProfile } = useAuth();
+  // Standard Tabs already reserve space; only a small buffer is needed
+  const listBottomPad = Spacing.four;
+
+  const [categories, setCategories] = useState<BrowseCategory[]>(FALLBACK_CATEGORIES);
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [featured, setFeatured] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'restaurant' | 'grocery_store'>('all');
+  const [activeGroup, setActiveGroup] = useState<string | null>(null);
 
-  const loadVendors = useCallback(async (category?: string) => {
+  const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [addressError, setAddressError] = useState<string | null>(null);
+
+  const loadData = useCallback(async (group: string | null) => {
     try {
       setError(null);
-      const data = await browseApi.listVendors(
-        category && category !== 'all' ? { category } : undefined
-      );
-      setVendors(data);
+      const [cats, vendorList, products] = await Promise.all([
+        browseApi.listCategories().catch(() => FALLBACK_CATEGORIES),
+        browseApi.listVendors(group ? { group, limit: 40 } : { limit: 40 }),
+        browseApi.listProducts(group ? { group, limit: 12 } : { limit: 12 }),
+      ]);
+      setCategories(cats.length ? cats : FALLBACK_CATEGORIES);
+      setVendors(vendorList);
+      setFeatured(products);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load vendors');
+      setError(err instanceof Error ? err.message : 'Could not load home feed');
     }
   }, []);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await loadVendors(activeFilter);
+      await loadData(activeGroup);
       setLoading(false);
     })();
-  }, [loadVendors, activeFilter]);
+  }, [loadData, activeGroup]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadVendors(activeFilter);
+    await loadData(activeGroup);
     setRefreshing(false);
-  }, [loadVendors, activeFilter]);
+  }, [loadData, activeGroup]);
 
   const goToVendor = (vendorId: number) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     router.push(`/(app)/vendor/${vendorId}` as any);
   };
 
-  const dietLabel = user?.diet_goal?.trim() || null;
+  const handleSaveAddress = async (address: string) => {
+    setSavingAddress(true);
+    setAddressError(null);
+    try {
+      await updateProfile({ address }, { navigate: false });
+      setAddressModalOpen(false);
+    } catch (err) {
+      setAddressError(err instanceof Error ? err.message : 'Could not save address');
+    } finally {
+      setSavingAddress(false);
+    }
+  };
+
+  const selectGroup = (key: string) => {
+    setActiveGroup((prev) => (prev === key ? null : key));
+  };
+
+  const activeLabel =
+    categories.find((c) => c.key === activeGroup)?.label ?? 'All stores';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      <AddressEditModal
+        visible={addressModalOpen}
+        initialAddress={user?.address}
+        saving={savingAddress}
+        error={addressError}
+        onClose={() => {
+          if (!savingAddress) {
+            setAddressModalOpen(false);
+            setAddressError(null);
+          }
+        }}
+        onSave={handleSaveAddress}
+      />
+
       <FlatList
         data={vendors}
         keyExtractor={(item) => String(item.id)}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={FudsColors.primary}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={FudsColors.primary} />
         }
-        contentContainerStyle={{ paddingBottom: tabClearance + Spacing.four }}
+        contentContainerStyle={{ paddingBottom: listBottomPad }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <>
-            {/* Sticky-style location header */}
+            {/* Location + filter — static, no animation */}
             <View style={styles.topBar}>
-              <View style={styles.locationRow}>
-                <View style={styles.pinCircle}>
-                  <Ionicons name="location" size={18} color={FudsColors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.deliveringLabel}>DELIVERING TO</Text>
-                  <View style={styles.addressRow}>
-                    <Text style={styles.addressText} numberOfLines={1}>
-                      {user?.address ?? 'Set your address in Profile'}
-                    </Text>
-                    <Ionicons name="chevron-down" size={14} color={FudsColors.primary} />
-                  </View>
-                </View>
-              </View>
-              <TouchableOpacity style={styles.bellButton} activeOpacity={0.8}>
-                <Ionicons name="notifications-outline" size={20} color={FudsColors.foreground} />
-                <View style={styles.bellDot} />
-              </TouchableOpacity>
-            </View>
-
-            {/* High demand banner — mockup tertiary dark card */}
-            <View style={styles.banner}>
-              <View style={styles.bannerIconBox}>
-                <Ionicons name="time-outline" size={20} color={FudsColors.primaryForeground} />
-              </View>
-              <View style={styles.bannerTextCol}>
-                <Text style={styles.bannerTitle}>High Demand Right Now!</Text>
-                <Text style={styles.bannerBody}>
-                  Delivery times are longer than usual. Schedule ahead to lock in a priority slot.
-                </Text>
-                <TouchableOpacity
-                  style={styles.bannerCta}
-                  onPress={() => {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    router.push('/(app)/(tabs)/schedule' as any);
-                  }}
-                >
-                  <Text style={styles.bannerCtaText}>Schedule with 111</Text>
-                  <Ionicons name="arrow-forward" size={12} color={FudsColors.primary} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Category grid with decorative images */}
-            <Text style={styles.sectionTitle}>What are you looking for?</Text>
-            <View style={styles.categoryRow}>
               <TouchableOpacity
-                style={[
-                  styles.categoryCard,
-                  activeFilter === 'restaurant' && styles.categoryCardActive,
-                ]}
-                activeOpacity={0.9}
-                onPress={() =>
-                  setActiveFilter((f) => (f === 'restaurant' ? 'all' : 'restaurant'))
-                }
+                style={styles.locationPill}
+                onPress={() => setAddressModalOpen(true)}
+                activeOpacity={0.85}
               >
-                <View style={styles.categoryTextCol}>
-                  <Text style={styles.categoryTitle}>Prepared Meals</Text>
-                  <Text style={styles.categorySubtitle}>Hot & fresh</Text>
-                  <View style={styles.categoryPill}>
-                    <Text style={styles.categoryPillText}>Order Food</Text>
-                  </View>
+                <View style={styles.locationIconShell}>
+                  <Ionicons name="location" size={14} color={FudsColors.primary} />
                 </View>
-                <Image source={{ uri: FudsImages.jollof }} style={styles.categoryImage} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.categoryCard,
-                  activeFilter === 'grocery_store' && styles.categoryCardActive,
-                ]}
-                activeOpacity={0.9}
-                onPress={() =>
-                  setActiveFilter((f) => (f === 'grocery_store' ? 'all' : 'grocery_store'))
-                }
-              >
-                <View style={styles.categoryTextCol}>
-                  <Text style={styles.categoryTitle}>Groceries</Text>
-                  <Text style={styles.categorySubtitle}>Fresh & pantry</Text>
-                  <View style={styles.categoryPill}>
-                    <Text style={styles.categoryPillText}>Shop Fresh</Text>
-                  </View>
-                </View>
-                <Image source={{ uri: FudsImages.groceries }} style={styles.categoryImage} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Diet strip when user has a goal */}
-            {dietLabel ? (
-              <View style={styles.dietStrip}>
-                <View style={styles.dietHeader}>
-                  <View style={styles.dietTitleRow}>
-                    <Ionicons name="sparkles" size={16} color={FudsColors.primary} />
-                    <Text style={styles.dietTitle}>Tailored for {dietLabel}</Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => {
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      router.push('/(app)/(tabs)/profile' as any);
-                    }}
-                  >
-                    <Text style={styles.dietLink}>Change goal</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.dietHint}>
-                  We&apos;ll highlight meals that fit your goals as you browse vendors below.
+                <Text style={styles.locationText} numberOfLines={1}>
+                  {user?.address?.trim() || 'Set delivery address'}
                 </Text>
-              </View>
-            ) : null}
-
-            {/* Deals of the week — horizontal promos */}
-            <View style={styles.promoHeader}>
-              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Deals of the Week</Text>
-              <Text style={styles.seeAll}>See all</Text>
+                <Ionicons name="chevron-down" size={14} color={FudsColors.mutedForeground} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.filterBtn} activeOpacity={0.85}>
+                <Ionicons name="options-outline" size={18} color={FudsColors.primaryForeground} />
+                <Text style={styles.filterLabel}>Filter</Text>
+              </TouchableOpacity>
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.promoScroll}
+
+            {/* Category hub — animations ONLY here */}
+            <View style={styles.categoryHub}>
+              <View style={styles.hubBlobA} />
+              <View style={styles.hubBlobB} />
+              <View style={styles.hubBlobC} />
+
+              <View style={styles.categoryGrid}>
+                {categories.map((cat, idx) => {
+                  const visual = getCategoryVisual(cat.icon || cat.key);
+                  const selected = activeGroup === cat.key;
+                  const radius = idx % 2 === 0 ? 28 : 36;
+                  return (
+                    <FadeInView key={cat.key} delay={80 + idx * 60} style={styles.categoryItem}>
+                      <AnimatedPressable
+                        scaleTo={0.9}
+                        onPress={() => selectGroup(cat.key)}
+                        style={styles.categoryPress}
+                      >
+                        <View
+                          style={[
+                            styles.categoryShape,
+                            {
+                              backgroundColor: visual.bg,
+                              borderRadius: radius,
+                            },
+                            selected && {
+                              borderColor: visual.tint,
+                              borderWidth: 2.5,
+                              transform: [{ rotate: '-3deg' }, { scale: 1.05 }],
+                            },
+                          ]}
+                        >
+                          <View
+                            style={[
+                              styles.categoryShine,
+                              { borderTopLeftRadius: radius, borderTopRightRadius: radius },
+                            ]}
+                          />
+                          <Ionicons name={visual.icon} size={28} color={visual.tint} />
+                        </View>
+                        <Text style={[styles.categoryLabel, selected && { color: visual.tint }]}>
+                          {cat.label}
+                        </Text>
+                        {cat.vendor_count > 0 ? (
+                          <View
+                            style={[
+                              styles.countPill,
+                              selected && { backgroundColor: visual.tint },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.categoryCount,
+                                selected && { color: '#fff' },
+                              ]}
+                            >
+                              {cat.vendor_count}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </AnimatedPressable>
+                    </FadeInView>
+                  );
+                })}
+              </View>
+            </View>
+
+            {/* Promo */}
+            <View style={styles.promoBanner}>
+              <View style={styles.promoWave} />
+              <View style={styles.promoCopy}>
+                <Text style={styles.promoEyebrow}>FUDS DEALS</Text>
+                <Text style={styles.promoTitle}>Pay less, eat better</Text>
+                <Text style={styles.promoSub}>Free delivery on first order this week</Text>
+                <View style={styles.promoCta}>
+                  <Text style={styles.promoCtaText}>Order now</Text>
+                </View>
+              </View>
+              <Image source={{ uri: FudsImages.jollof }} style={styles.promoImage} />
+            </View>
+
+            {/* High demand */}
+            <TouchableOpacity
+              style={styles.demandCard}
+              activeOpacity={0.9}
+              onPress={() => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                router.push('/(app)/(tabs)/schedule' as any);
+              }}
             >
-              <View style={[styles.promoCard, styles.promoCardPrimary]}>
-                <View style={styles.promoCopy}>
-                  <View style={styles.promoBadge}>
-                    <Text style={styles.promoBadgeText}>PROMO: JOLLOF50</Text>
-                  </View>
-                  <Text style={styles.promoTitle}>50% Off Jollof Rice</Text>
-                  <Text style={styles.promoSub}>Valid at select Lagos outlets</Text>
-                </View>
-                <Image source={{ uri: FudsImages.jollof }} style={styles.promoImage} />
+              <View style={styles.demandIcon}>
+                <Ionicons name="flash" size={20} color={FudsColors.secondary} />
               </View>
-              <View style={[styles.promoCard, styles.promoCardDark]}>
-                <View style={styles.promoCopy}>
-                  <View style={styles.promoBadge}>
-                    <Text style={styles.promoBadgeText}>WEEKLY RESTOCK</Text>
-                  </View>
-                  <Text style={styles.promoTitle}>Free Delivery on Groceries</Text>
-                  <Text style={styles.promoSub}>Orders above ₦15,000</Text>
-                </View>
-                <Image source={{ uri: FudsImages.groceries }} style={styles.promoImage} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.demandTitle}>High demand right now</Text>
+                <Text style={styles.demandBody}>
+                  Schedule with 111 for priority slots from 08:00 onwards.
+                </Text>
               </View>
-            </ScrollView>
+              <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
+            </TouchableOpacity>
 
-            <View style={styles.popularHeader}>
-              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>Popular Near You</Text>
-              {activeFilter !== 'all' && (
-                <TouchableOpacity onPress={() => setActiveFilter('all')}>
-                  <Text style={styles.seeAll}>Show all</Text>
+            {/* Featured */}
+            {featured.length > 0 && (
+              <>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>
+                    {activeGroup ? `${activeLabel} picks` : 'Featured'} ✨
+                  </Text>
+                  <Text style={styles.seeAll}>See all</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.featuredScroll}
+                >
+                  {featured.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={styles.featuredCard}
+                      activeOpacity={0.9}
+                      onPress={() => goToVendor(p.vendor_id)}
+                    >
+                      <View style={styles.featuredImageShell}>
+                        <Image
+                          source={{
+                            uri:
+                              p.image_url ||
+                              (p.category === 'grocery_store' ||
+                              p.category === 'supermarket' ||
+                              p.category === 'local_market'
+                                ? FudsImages.groceries
+                                : FudsImages.jollof),
+                          }}
+                          style={styles.featuredImage}
+                        />
+                        <View style={styles.addFab}>
+                          <Ionicons name="add" size={16} color="#fff" />
+                        </View>
+                      </View>
+                      <Text style={styles.featuredName} numberOfLines={2}>
+                        {p.name}
+                      </Text>
+                      <Text style={styles.featuredPrice}>
+                        ₦{Number(p.price).toLocaleString()}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            )}
+
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>
+                {activeGroup ? activeLabel : 'All stores'}
+              </Text>
+              {activeGroup ? (
+                <TouchableOpacity onPress={() => setActiveGroup(null)}>
+                  <Text style={styles.seeAll}>Clear filter</Text>
                 </TouchableOpacity>
+              ) : (
+                <Text style={styles.seeAll}>{vendors.length} nearby</Text>
               )}
             </View>
+
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
           </>
         }
         renderItem={({ item }) => {
           const open = isVendorOpen(item);
+          const cover =
+            item.business_logo ||
+            (item.category === 'grocery_store' ||
+            item.category === 'supermarket' ||
+            item.category === 'local_market' ||
+            item.browse_group === 'grocery'
+              ? FudsImages.groceries
+              : FudsImages.jollof);
+
           return (
             <TouchableOpacity
               style={[styles.vendorCard, !open && styles.vendorCardClosed]}
@@ -268,46 +362,30 @@ export default function HomeScreen() {
               onPress={() => goToVendor(item.id)}
             >
               <View style={styles.vendorImageWrap}>
-                {item.business_logo ? (
-                  <Image
-                    source={{ uri: item.business_logo }}
-                    style={[styles.vendorImage, !open && styles.vendorImageGrey]}
-                  />
-                ) : (
-                  <Image
-                    source={{
-                      uri:
-                        item.category === 'grocery_store' || item.category === 'supermarket'
-                          ? FudsImages.groceries
-                          : FudsImages.jollof,
-                    }}
-                    style={[styles.vendorImage, !open && styles.vendorImageGrey]}
-                  />
-                )}
+                <Image
+                  source={{ uri: cover }}
+                  style={[styles.vendorImage, !open && styles.vendorImageDim]}
+                />
                 {!open && (
-                  <View style={styles.closedBadge}>
-                    <Text style={styles.closedBadgeText}>Closed</Text>
+                  <View style={styles.closedOverlay}>
+                    <View style={styles.closedPill}>
+                      <Text style={styles.closedTitle}>Store is closed</Text>
+                      <Text style={styles.closedSub}>{reopenLabel(item)}</Text>
+                    </View>
                   </View>
                 )}
-                {open && item.opening_time && item.closing_time ? (
+                {open && (
                   <View style={styles.etaBadge}>
-                    <Text style={styles.etaBadgeText}>
-                      {formatHours(item.opening_time)}–{formatHours(item.closing_time)}
+                    <Text style={styles.etaText}>
+                      {formatHours(item.opening_time)}–{formatHours(item.closing_time) || 'late'}
                     </Text>
                   </View>
-                ) : null}
-                {!open && item.opening_time ? (
-                  <View style={styles.reopenBadge}>
-                    <Text style={styles.reopenBadgeText}>
-                      Reopens {formatHours(item.opening_time)}
-                    </Text>
-                  </View>
-                ) : null}
+                )}
               </View>
-              <View style={styles.vendorInfoRow}>
+              <View style={styles.vendorMeta}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.vendorName}>{item.business_name}</Text>
-                  <Text style={styles.vendorMeta} numberOfLines={1}>
+                  <Text style={styles.vendorSub} numberOfLines={1}>
                     {formatCategory(item.category)}
                     {item.address ? ` · ${item.address.split(',')[0]}` : ''}
                   </Text>
@@ -324,7 +402,7 @@ export default function HomeScreen() {
                       { color: open ? FudsColors.openText : FudsColors.mutedForeground },
                     ]}
                   >
-                    {open ? 'OPEN NOW' : 'CLOSED'}
+                    {open ? 'OPEN' : 'CLOSED'}
                   </Text>
                 </View>
               </View>
@@ -335,7 +413,16 @@ export default function HomeScreen() {
           loading ? (
             <ActivityIndicator color={FudsColors.primary} style={{ marginTop: 40 }} />
           ) : (
-            <Text style={styles.emptyText}>No vendors nearby yet.</Text>
+            <View style={styles.emptyBox}>
+              <View style={styles.emptyShape}>
+                <Ionicons name="storefront-outline" size={36} color={FudsColors.mutedForeground} />
+              </View>
+              <Text style={styles.emptyText}>
+                {activeGroup
+                  ? `No ${activeLabel.toLowerCase()} stores nearby yet.`
+                  : 'No vendors nearby yet.'}
+              </Text>
+            </View>
           )
         }
       />
@@ -345,211 +432,281 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: FudsColors.background },
+
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 10,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.three,
-    borderBottomWidth: 1,
-    borderBottomColor: FudsColors.border,
-    backgroundColor: FudsColors.background,
+    paddingVertical: Spacing.two,
   },
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
-  pinCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  locationPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: FudsColors.card,
+    borderRadius: FudsRadius.full,
+    borderWidth: 1,
+    borderColor: FudsColors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    ...FudsShadow.sm,
+  },
+  locationIconShell: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
     backgroundColor: 'rgba(29,158,117,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  deliveringLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: FudsColors.mutedForeground,
-    letterSpacing: 0.8,
-  },
-  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  addressText: {
+  locationText: {
+    flex: 1,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: FudsColors.foreground,
-    maxWidth: 220,
   },
-  bellButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: FudsColors.background,
-  },
-  bellDot: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: FudsColors.destructive,
-  },
-  banner: {
-    marginHorizontal: Spacing.three,
-    marginTop: Spacing.three,
-    padding: Spacing.three,
-    backgroundColor: FudsColors.tertiary,
-    borderRadius: FudsRadius.xl,
+  filterBtn: {
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: FudsColors.primary,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    ...FudsShadow.sm,
+  },
+  filterLabel: {
+    color: FudsColors.primaryForeground,
+    fontWeight: '800',
+    fontSize: 13,
+  },
+
+  categoryHub: {
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.two,
+    backgroundColor: '#F5C518',
+    borderRadius: 28,
+    paddingVertical: Spacing.four,
+    paddingHorizontal: Spacing.two,
+    overflow: 'hidden',
     ...FudsShadow.md,
   },
-  bannerIconBox: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignSelf: 'flex-start',
+  hubBlobA: {
+    position: 'absolute',
+    top: -30,
+    right: -20,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
-  bannerTextCol: { flex: 1, gap: 4 },
-  bannerTitle: { color: '#fff', fontWeight: '800', fontSize: 13, letterSpacing: 0.2 },
-  bannerBody: { color: 'rgba(255,255,255,0.92)', fontSize: 11, lineHeight: 16 },
-  bannerCta: {
-    marginTop: 8,
-    alignSelf: 'flex-start',
+  hubBlobB: {
+    position: 'absolute',
+    bottom: -40,
+    left: -20,
+    width: 120,
+    height: 90,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,180,0,0.45)',
+    transform: [{ rotate: '-15deg' }],
+  },
+  hubBlobC: {
+    position: 'absolute',
+    top: 40,
+    left: '40%',
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    transform: [{ rotate: '20deg' }],
+  },
+  categoryGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    rowGap: 16,
+    zIndex: 2,
+  },
+  categoryItem: {
+    width: '30%',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: FudsColors.secondary,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
   },
-  bannerCtaText: { color: FudsColors.primary, fontWeight: '800', fontSize: 11 },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: FudsColors.foreground,
-    marginHorizontal: Spacing.three,
-    marginTop: Spacing.four,
-    marginBottom: Spacing.two,
-  },
-  categoryRow: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: Spacing.three,
-  },
-  categoryCard: {
-    flex: 1,
-    height: 140,
-    backgroundColor: FudsColors.card,
-    borderRadius: FudsRadius.xl,
-    borderWidth: 1,
-    borderColor: FudsColors.border,
-    padding: Spacing.three,
+  categoryPress: { alignItems: 'center', gap: 6 },
+  categoryShape: {
+    width: 74,
+    height: 74,
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
     ...FudsShadow.sm,
   },
-  categoryCardActive: {
-    borderColor: FudsColors.primary,
-    borderWidth: 2,
-  },
-  categoryTextCol: { zIndex: 2, flex: 1, justifyContent: 'space-between', maxWidth: '75%' },
-  categoryTitle: { fontWeight: '800', fontSize: 15, color: FudsColors.foreground },
-  categorySubtitle: { fontSize: 11, color: FudsColors.mutedForeground, marginTop: 2 },
-  categoryPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(29,158,117,0.12)',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  categoryPillText: { fontSize: 10, fontWeight: '800', color: FudsColors.primary },
-  categoryImage: {
+  categoryShine: {
     position: 'absolute',
-    right: -16,
-    bottom: -16,
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    opacity: 0.85,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '45%',
+    backgroundColor: 'rgba(255,255,255,0.35)',
   },
-  dietStrip: {
-    marginTop: Spacing.four,
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    backgroundColor: 'rgba(159,225,203,0.25)',
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: 'rgba(159,225,203,0.45)',
-  },
-  dietHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  dietTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dietTitle: { fontSize: 13, fontWeight: '800', color: FudsColors.foreground },
-  dietLink: { fontSize: 12, fontWeight: '800', color: FudsColors.primary },
-  dietHint: { fontSize: 12, color: FudsColors.mutedForeground, lineHeight: 17 },
-  promoHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: Spacing.four,
-    marginHorizontal: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  popularHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: Spacing.four,
-    marginHorizontal: Spacing.three,
-    marginBottom: Spacing.two,
-  },
-  seeAll: { fontSize: 12, fontWeight: '800', color: FudsColors.primary },
-  promoScroll: { paddingHorizontal: Spacing.three, gap: 12 },
-  promoCard: {
-    width: 280,
-    height: 140,
-    borderRadius: FudsRadius.xl,
-    padding: Spacing.three,
-    overflow: 'hidden',
-    justifyContent: 'space-between',
-    ...FudsShadow.md,
-  },
-  promoCardPrimary: {
-    backgroundColor: FudsColors.primary,
-  },
-  promoCardDark: {
-    backgroundColor: FudsColors.tertiary,
-  },
-  promoCopy: { zIndex: 2, gap: 4, maxWidth: '72%' },
-  promoBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  promoBadgeText: {
-    color: '#fff',
-    fontSize: 9,
+  categoryLabel: {
+    fontSize: 12,
     fontWeight: '800',
-    letterSpacing: 0.6,
+    color: FudsColors.foreground,
+    textAlign: 'center',
   },
-  promoTitle: { color: '#fff', fontSize: 17, fontWeight: '900', lineHeight: 22 },
-  promoSub: { color: 'rgba(255,255,255,0.9)', fontSize: 11 },
+  countPill: {
+    minWidth: 22,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 10,
+    backgroundColor: 'rgba(8,80,65,0.12)',
+    alignItems: 'center',
+  },
+  categoryCount: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: 'rgba(8,80,65,0.7)',
+  },
+
+  promoBanner: {
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.three,
+    backgroundColor: FudsColors.primary,
+    borderRadius: 26,
+    padding: Spacing.three,
+    minHeight: 128,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    ...FudsShadow.sm,
+  },
+  promoWave: {
+    position: 'absolute',
+    right: 40,
+    bottom: -30,
+    width: 160,
+    height: 100,
+    borderRadius: 80,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  promoCopy: { flex: 1, zIndex: 2, gap: 4, maxWidth: '70%' },
+  promoEyebrow: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  promoTitle: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  promoSub: { color: 'rgba(255,255,255,0.9)', fontSize: 12 },
+  promoCta: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: FudsRadius.full,
+  },
+  promoCtaText: { color: FudsColors.primary, fontWeight: '800', fontSize: 12 },
   promoImage: {
     position: 'absolute',
-    right: -20,
-    bottom: -20,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    opacity: 0.4,
+    right: -12,
+    bottom: -16,
+    width: 110,
+    height: 110,
+    borderRadius: 40,
+    opacity: 0.5,
+    transform: [{ rotate: '8deg' }],
   },
+
+  demandCard: {
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.three,
+    backgroundColor: FudsColors.tertiary,
+    borderRadius: 22,
+    padding: Spacing.three,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    ...FudsShadow.sm,
+  },
+  demandIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-6deg' }],
+  },
+  demandTitle: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  demandBody: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.four,
+    marginBottom: Spacing.two,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: FudsColors.foreground,
+  },
+  seeAll: { fontSize: 12, fontWeight: '800', color: FudsColors.primary },
+
+  featuredScroll: { paddingHorizontal: Spacing.three, gap: 12 },
+  featuredCard: {
+    width: 148,
+    backgroundColor: FudsColors.card,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: FudsColors.border,
+    padding: 10,
+    ...FudsShadow.sm,
+  },
+  featuredImageShell: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  featuredImage: {
+    width: '100%',
+    height: 104,
+    backgroundColor: FudsColors.muted,
+  },
+  addFab: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 12,
+    backgroundColor: FudsColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...FudsShadow.sm,
+  },
+  featuredName: {
+    marginTop: 10,
+    fontSize: 12,
+    fontWeight: '800',
+    color: FudsColors.foreground,
+    minHeight: 32,
+  },
+  featuredPrice: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '800',
+    color: FudsColors.primary,
+  },
+
   errorText: {
     color: FudsColors.destructive,
     fontSize: 12,
@@ -557,64 +714,71 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
     fontWeight: '600',
   },
+
   vendorCard: {
     marginHorizontal: Spacing.three,
     marginBottom: Spacing.three,
     backgroundColor: FudsColors.card,
-    borderRadius: FudsRadius.xl,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: FudsColors.border,
     overflow: 'hidden',
     ...FudsShadow.sm,
   },
-  vendorCardClosed: { opacity: 0.72 },
-  vendorImageWrap: { height: 160, backgroundColor: FudsColors.muted },
+  vendorCardClosed: { opacity: 0.97 },
+  vendorImageWrap: { height: 154, backgroundColor: FudsColors.muted },
   vendorImage: { width: '100%', height: '100%' },
-  vendorImageGrey: { opacity: 0.75 },
-  closedBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
-    backgroundColor: FudsColors.destructive,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+  vendorImageDim: { opacity: 0.55 },
+  closedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.42)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  closedBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  closedPill: {
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  closedTitle: { color: '#fff', fontWeight: '900', fontSize: 15 },
+  closedSub: { color: 'rgba(255,255,255,0.9)', fontWeight: '700', fontSize: 12, marginTop: 2 },
   etaBadge: {
     position: 'absolute',
-    bottom: 12,
-    right: 12,
+    bottom: 10,
+    right: 10,
     backgroundColor: FudsColors.primary,
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  etaBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  reopenBadge: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
-    backgroundColor: FudsColors.muted,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  reopenBadgeText: { color: FudsColors.foreground, fontSize: 11, fontWeight: '800' },
-  vendorInfoRow: {
+  etaText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  vendorMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.three,
     gap: 8,
   },
   vendorName: { fontWeight: '800', fontSize: 14, color: FudsColors.foreground },
-  vendorMeta: { fontSize: 12, color: FudsColors.mutedForeground, marginTop: 3 },
+  vendorSub: { fontSize: 12, color: FudsColors.mutedForeground, marginTop: 2 },
   statusPill: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
-  statusPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  statusPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
+
+  emptyBox: { alignItems: 'center', gap: 10, marginTop: 48, paddingHorizontal: 32 },
+  emptyShape: {
+    width: 80,
+    height: 80,
+    borderRadius: 28,
+    backgroundColor: FudsColors.muted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-8deg' }],
+  },
   emptyText: {
     textAlign: 'center',
     color: FudsColors.mutedForeground,
-    marginTop: 60,
     fontSize: 13,
+    fontWeight: '600',
   },
 });

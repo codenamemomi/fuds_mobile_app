@@ -1,10 +1,10 @@
 /**
  * Profile Setup Screen — Step 3 of 3
- * Collects: Full Name (optional update), Delivery Address, Diet Goal chip
+ * Name is taken from registration (read-only). Collects address + diet goal.
  * PUT /api/v1/auth/me → navigate to (app)
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -16,9 +16,10 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 
+import { AddressField } from '@/components/ui/address-field';
 import { FudsButton } from '@/components/ui/fuds-button';
-import { FudsInput } from '@/components/ui/fuds-input';
 import { StepDots } from '@/components/ui/step-dots';
 import { FudsColors, FudsRadius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
@@ -37,18 +38,25 @@ const DIET_GOALS = [
 type DietGoal = (typeof DIET_GOALS)[number];
 
 export default function ProfileSetupScreen() {
-  const { updateProfile, user } = useAuth();
+  const { updateProfile, refreshUser, user } = useAuth();
 
-  const [fullname, setFullname] = useState(user?.fullname ?? '');
+  const displayName = user?.fullname?.trim() || '';
   const [address, setAddress] = useState(user?.address ?? '');
   const [dietGoal, setDietGoal] = useState<DietGoal | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Ensure we have the latest user (name from registration) if context was empty
+  useEffect(() => {
+    if (!user?.fullname) {
+      refreshUser();
+    }
+  }, [user?.fullname, refreshUser]);
+
   async function handleSave() {
     setLoading(true);
     try {
+      // Do not send fullname — already set at registration and locked here
       await updateProfile({
-        fullname: fullname.trim() || undefined,
         address: address.trim() || undefined,
         diet_goal: dietGoal ?? undefined,
       });
@@ -79,32 +87,39 @@ export default function ProfileSetupScreen() {
 
           {/* Title */}
           <View style={styles.titleBlock}>
-            <Text style={styles.title}>Complete Profile</Text>
+            <Text style={styles.title}>
+              {displayName ? `Welcome, ${displayName.split(' ')[0]}!` : 'Complete Profile'}
+            </Text>
             <Text style={styles.subtitle}>
-              Customise your FUDS experience in Lagos. We&apos;ll tailor food &amp; grocery
-              suggestions to your goals.
+              Add your delivery address and diet goal. Your name from registration is already
+              saved.
             </Text>
           </View>
 
           {/* Form */}
           <View style={styles.form}>
-            <FudsInput
-              label="Full Name"
-              placeholder="e.g. Tunde Alao"
-              autoCapitalize="words"
-              returnKeyType="next"
-              value={fullname}
-              onChangeText={setFullname}
-              leftContent={<Text style={styles.fieldIcon}>👤</Text>}
-            />
+            {/* Registration name — display only, not editable */}
+            <View style={styles.nameBlock}>
+              <Text style={styles.nameLabel}>FULL NAME</Text>
+              <View style={styles.nameCard}>
+                <View style={styles.nameIcon}>
+                  <Ionicons name="person" size={18} color={FudsColors.primary} />
+                </View>
+                <View style={styles.nameTextCol}>
+                  <Text style={styles.nameValue} numberOfLines={2}>
+                    {displayName || 'Loading…'}
+                  </Text>
+                  <Text style={styles.nameHint}>Set when you registered · cannot be changed here</Text>
+                </View>
+                <Ionicons name="lock-closed" size={14} color={FudsColors.mutedForeground} />
+              </View>
+            </View>
 
-            <FudsInput
+            <AddressField
               label="Delivery Address"
               placeholder="e.g. 12 Admiralty Way, Lekki Phase 1"
-              returnKeyType="done"
               value={address}
               onChangeText={setAddress}
-              leftContent={<Text style={styles.fieldIcon}>📍</Text>}
             />
 
             {/* Diet Goal chips */}
@@ -181,7 +196,43 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   form: { gap: Spacing.three },
-  fieldIcon: { fontSize: 16 },
+  nameBlock: { gap: 6 },
+  nameLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: FudsColors.foreground,
+    letterSpacing: 1.2,
+  },
+  nameCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: FudsColors.muted,
+    borderWidth: 1.5,
+    borderColor: FudsColors.border,
+    borderRadius: FudsRadius.md,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  nameIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(29,158,117,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nameTextCol: { flex: 1, gap: 2 },
+  nameValue: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: FudsColors.foreground,
+  },
+  nameHint: {
+    fontSize: 11,
+    color: FudsColors.mutedForeground,
+    fontWeight: '600',
+  },
   chipsSection: { gap: 10 },
   chipsLabel: {
     fontSize: 11,

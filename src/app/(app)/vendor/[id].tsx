@@ -32,6 +32,7 @@ import {
   FudsShadow,
   Spacing,
 } from '@/constants/theme';
+import { safeGoBack } from '@/lib/navigation';
 
 function formatCategory(category: string | null): string {
   if (!category) return 'Vendor';
@@ -132,7 +133,10 @@ export default function VendorDetailScreen() {
               <Image source={{ uri: heroUri }} style={styles.heroImage} />
               <View style={styles.heroOverlay} />
               <SafeAreaView edges={['top']} style={styles.heroNav}>
-                <TouchableOpacity style={styles.navBtn} onPress={() => router.back()}>
+                <TouchableOpacity
+                  style={styles.navBtn}
+                  onPress={() => safeGoBack('/(app)/(tabs)/')}
+                >
                   <Ionicons name="arrow-back" size={20} color={FudsColors.foreground} />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.navBtn}>
@@ -251,7 +255,7 @@ export default function VendorDetailScreen() {
             activeOpacity={0.92}
             onPress={() => {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              router.push('/(app)/(tabs)/cart' as any);
+              router.push('/(app)/(tabs)/orders' as any);
             }}
           >
             <View style={styles.cartBarLeft}>

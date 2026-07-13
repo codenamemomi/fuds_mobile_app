@@ -9,6 +9,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 
 import { AuthProvider } from '@/context/auth';
+import { ThemeProvider } from '@/context/theme';
 import { Slot } from 'expo-router';
 
 SplashScreen.preventAutoHideAsync();
@@ -19,8 +20,10 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <AuthProvider>
-      <Slot />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <Slot />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

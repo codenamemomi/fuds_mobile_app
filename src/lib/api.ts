@@ -60,6 +60,13 @@ export interface RegisterPayload {
   phone: string;
   email: string;
   password: string;
+  password_confirm: string;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+  password_confirm: string;
 }
 
 export interface LoginPayload {
@@ -80,7 +87,6 @@ export interface UpdateProfilePayload {
   fullname?: string;
   phone?: string;
   email?: string;
-  password?: string;
   diet_goal?: string;
   address?: string;
 }
@@ -176,17 +182,39 @@ export const authApi = {
       auth: true,
       body: JSON.stringify(payload),
     }),
+
+  changePassword: (payload: ChangePasswordPayload) =>
+    request<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
 };
 
 // ─── Browse / Vendor / Product types (match backend schemas) ──────────────────
 
-/** Matches api.v1.models.vendor.VendorCategory */
+/** Fine-grained vendor type stored in DB */
 export type VendorCategory =
   | 'restaurant'
   | 'grocery_store'
   | 'supermarket'
   | 'bakery'
-  | 'pharmacy';
+  | 'pharmacy'
+  | 'shop'
+  | 'local_market'
+  | 'package_delivery';
+
+/** Consumer Home grid keys — pass as `group` to /browse/vendors */
+export type BrowseGroupKey = 'food' | 'grocery' | 'shops' | 'pharmacy' | 'packages';
+
+export interface BrowseCategory {
+  key: BrowseGroupKey | string;
+  label: string;
+  subtitle: string;
+  icon: string;
+  vendor_categories: string[];
+  vendor_count: number;
+}
 
 /** Matches api.v1.models.vendor.VendorStatus */
 export type VendorStatus = 'activated' | 'suspended' | 'deactivated';
@@ -197,7 +225,8 @@ export type ProductCategory = VendorCategory;
 export interface Vendor {
   id: number;
   business_name: string;
-  category: VendorCategory | null;
+  category: VendorCategory | string | null;
+  browse_group?: BrowseGroupKey | string | null;
   business_description: string | null;
   business_logo: string | null;
   cac: string | null;
@@ -252,17 +281,27 @@ export function isVendorOpen(vendor: Pick<Vendor, 'status' | 'opening_time' | 'c
 
 // ─── Browse endpoints ─────────────────────────────────────────────────────────
 
+function toQuery(params?: Record<string, string | number | undefined | null>): string {
+  if (!params) return '';
+  const q = new URLSearchParams(
+    Object.entries(params)
+      .filter(([, v]) => v != null && v !== '')
+      .map(([k, v]) => [k, String(v)])
+  ).toString();
+  return q ? `?${q}` : '';
+}
+
 export const browseApi = {
-  listVendors: (params?: { category?: string; search?: string; page?: number; limit?: number }) => {
-    const query = params
-      ? new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v != null && v !== '')
-            .map(([k, v]) => [k, String(v)])
-        ).toString()
-      : '';
-    return request<Vendor[]>(`/browse/vendors${query ? `?${query}` : ''}`);
-  },
+  /** Home category grid — Food, Grocery, Shops, Pharmacy, Packages */
+  listCategories: () => request<BrowseCategory[]>('/browse/categories'),
+
+  listVendors: (params?: {
+    category?: string;
+    group?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) => request<Vendor[]>(`/browse/vendors${toQuery(params)}`),
 
   /** Returns products inline — no second listProducts call needed for detail screens. */
   getVendor: (vendorId: number) =>
@@ -271,21 +310,13 @@ export const browseApi = {
   listProducts: (params?: {
     vendor_id?: number;
     category?: string;
+    group?: string;
     name?: string;
     min_price?: number;
     max_price?: number;
     page?: number;
     limit?: number;
-  }) => {
-    const query = params
-      ? new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v != null && v !== '')
-            .map(([k, v]) => [k, String(v)])
-        ).toString()
-      : '';
-    return request<Product[]>(`/browse/products${query ? `?${query}` : ''}`);
-  },
+  }) => request<Product[]>(`/browse/products${toQuery(params as Record<string, string | number | undefined | null>)}`),
 
   getProduct: (productId: number) =>
     request<ProductWithVendor>(`/browse/products/${productId}`),
