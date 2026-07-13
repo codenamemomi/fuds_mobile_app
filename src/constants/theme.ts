@@ -9,9 +9,11 @@ import { Platform } from 'react-native';
 
 // ─── FUDS Brand Colors ────────────────────────────────────────────────────────
 
+/** Brand tokens from FUDS Food Delivery App-cursor-projects design system */
 export const FudsColors = {
   background: '#F1EFE8',
   foreground: '#085041',
+  tertiary: '#085041',
   primary: '#1D9E75',
   primaryForeground: '#FFFFFF',
   secondary: '#9FE1CB',
@@ -26,6 +28,35 @@ export const FudsColors = {
   border: '#D8D4C8',
   input: '#D8D4C8',
   ring: '#1D9E75',
+  openBg: '#ECFDF5',
+  openText: '#059669',
+  amber: '#F59E0B',
+} as const;
+
+/** Promo images used in the HTML mockups */
+export const FudsImages = {
+  jollof:
+    'https://uxmagic.blob.core.windows.net/public/agent-images/promo-jollof-1783775809565-crlnasg33v8.png',
+  groceries:
+    'https://uxmagic.blob.core.windows.net/public/agent-images/promo-groceries-1783775818633-60yc70b5oac.png',
+} as const;
+
+/** Soft card shadow matching mockup shadow-theme */
+export const FudsShadow = {
+  sm: {
+    shadowColor: 'rgba(15, 23, 42, 0.12)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  md: {
+    shadowColor: 'rgba(15, 23, 42, 0.12)',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 1,
+    shadowRadius: 30,
+    elevation: 4,
+  },
 } as const;
 
 // ─── Legacy theme colors (kept for existing components) ───────────────────────
@@ -84,7 +115,12 @@ export const Spacing = {
   six: 64,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
+/**
+ * Space reserved for NativeTabs bar so sticky footers (e.g. Checkout)
+ * don't sit under the tab icons. Includes typical bar height only —
+ * combine with useSafeAreaInsets().bottom when needed.
+ */
+export const BottomTabInset = Platform.select({ ios: 88, android: 72 }) ?? 72;
 export const MaxContentWidth = 800;
 
 // ─── FUDS-specific spacing ────────────────────────────────────────────────────
@@ -94,4 +130,5 @@ export const FudsRadius = {
   md: 12,
   lg: 16,
   xl: 24,
+  full: 999,
 } as const;

@@ -1,6 +1,6 @@
 /**
  * FUDS API Client
- * Connects to the FastAPI backend at /api/v1/auth/*
+ * Connects to the FastAPI backend at /api/v1/*
  * Base URL is configured via app.json extras → Constants.expoConfig.extra.apiBaseUrl
  */
 
@@ -10,8 +10,6 @@ import { Platform } from 'react-native';
 import { getToken } from './token';
 
 const getApiBaseUrl = (): string => {
-  // In development, dynamically determine the host computer's IP address.
-  // This allows physical devices (connected over local Wi-Fi) to reach the backend.
   if (__DEV__) {
     const hostUri = Constants.expoConfig?.hostUri; // e.g. "192.168.1.15:8081"
     if (hostUri) {
@@ -26,11 +24,9 @@ const getApiBaseUrl = (): string => {
   if (!configuredUrl) {
     return 'http://localhost:8000';
   }
-  // Android emulator maps 10.0.2.2 to host's 127.0.0.1
   if (Platform.OS === 'android') {
     return configuredUrl;
   }
-  // For iOS Simulator, Web, etc., map 10.0.2.2 back to localhost
   if (configuredUrl.includes('10.0.2.2')) {
     return configuredUrl.replace('10.0.2.2', 'localhost');
   }
@@ -44,7 +40,7 @@ if (__DEV__) {
 
 const API_PREFIX = '/api/v1';
 
-// ─── Types (mirroring backend Pydantic schemas) ───────────────────────────────
+// ─── Auth types ───────────────────────────────────────────────────────────────
 
 export interface UserRead {
   id: number;
@@ -128,10 +124,9 @@ async function request<T>(
     } catch {
       // ignore parse errors
     }
-    throw new Error(detail);
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
   }
 
-  // Handle 204 No Content
   const contentType = response.headers.get('content-type');
   if (!contentType?.includes('application/json')) {
     return undefined as unknown as T;
@@ -181,4 +176,211 @@ export const authApi = {
       auth: true,
       body: JSON.stringify(payload),
     }),
+};
+
+// ─── Browse / Vendor / Product types (match backend schemas) ──────────────────
+
+/** Matches api.v1.models.vendor.VendorCategory */
+export type VendorCategory =
+  | 'restaurant'
+  | 'grocery_store'
+  | 'supermarket'
+  | 'bakery'
+  | 'pharmacy';
+
+/** Matches api.v1.models.vendor.VendorStatus */
+export type VendorStatus = 'activated' | 'suspended' | 'deactivated';
+
+/** Matches api.v1.models.product.ProductCategory */
+export type ProductCategory = VendorCategory;
+
+export interface Vendor {
+  id: number;
+  business_name: string;
+  category: VendorCategory | null;
+  business_description: string | null;
+  business_logo: string | null;
+  cac: string | null;
+  rc_number: string | null;
+  address: string | null;
+  tin: string | null;
+  opening_time: string | null; // "HH:MM:SS"
+  closing_time: string | null; // "HH:MM:SS"
+  status: VendorStatus;
+}
+
+export interface Product {
+  id: number;
+  vendor_id: number;
+  name: string;
+  price: number;
+  category: ProductCategory | null;
+  image_url: string | null;
+}
+
+export interface VendorWithProducts extends Vendor {
+  products: Product[];
+}
+
+export interface ProductWithVendor extends Product {
+  vendor_name: string | null;
+  vendor_category: string | null;
+  vendor_address: string | null;
+}
+
+/** Derive open/closed from status + opening/closing hours (backend has no is_open). */
+export function isVendorOpen(vendor: Pick<Vendor, 'status' | 'opening_time' | 'closing_time'>): boolean {
+  if (vendor.status !== 'activated') return false;
+  if (!vendor.opening_time || !vendor.closing_time) return true;
+
+  const parse = (t: string) => {
+    const [h, m, s] = t.split(':').map(Number);
+    return (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+  };
+
+  const now = new Date();
+  const current = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  const open = parse(vendor.opening_time);
+  const close = parse(vendor.closing_time);
+
+  // Overnight window (e.g. 16:00 → 23:59 or 22:00 → 02:00)
+  if (close < open) {
+    return current >= open || current <= close;
+  }
+  return current >= open && current <= close;
+}
+
+// ─── Browse endpoints ─────────────────────────────────────────────────────────
+
+export const browseApi = {
+  listVendors: (params?: { category?: string; search?: string; page?: number; limit?: number }) => {
+    const query = params
+      ? new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v != null && v !== '')
+            .map(([k, v]) => [k, String(v)])
+        ).toString()
+      : '';
+    return request<Vendor[]>(`/browse/vendors${query ? `?${query}` : ''}`);
+  },
+
+  /** Returns products inline — no second listProducts call needed for detail screens. */
+  getVendor: (vendorId: number) =>
+    request<VendorWithProducts>(`/browse/vendors/${vendorId}`),
+
+  listProducts: (params?: {
+    vendor_id?: number;
+    category?: string;
+    name?: string;
+    min_price?: number;
+    max_price?: number;
+    page?: number;
+    limit?: number;
+  }) => {
+    const query = params
+      ? new URLSearchParams(
+          Object.entries(params)
+            .filter(([, v]) => v != null && v !== '')
+            .map(([k, v]) => [k, String(v)])
+        ).toString()
+      : '';
+    return request<Product[]>(`/browse/products${query ? `?${query}` : ''}`);
+  },
+
+  getProduct: (productId: number) =>
+    request<ProductWithVendor>(`/browse/products/${productId}`),
+};
+
+// ─── Cart types (match CartItemCreate / CartItemUpdate / CartItemRead / CartRead) ──
+
+export interface CartItemCreate {
+  product_id: number;
+  vendor_id: number;
+  quantity?: number; // defaults to 1 server-side
+}
+
+export interface CartItemUpdate {
+  product_id: number;
+  quantity: number; // 0 removes the item server-side (ge=0)
+}
+
+/** Flat shape returned by GET /cart — not nested under product. */
+export interface CartItemRead {
+  product_id: number;
+  vendor_id: number;
+  name: string;
+  price: number;
+  quantity: number;
+  subtotal: number;
+  image_url: string | null;
+}
+
+export interface CartRead {
+  user_id: number;
+  items: CartItemRead[];
+  total: number;
+  item_count: number;
+}
+
+// ─── Cart endpoints ───────────────────────────────────────────────────────────
+
+export const cartApi = {
+  addItem: (payload: CartItemCreate) =>
+    request<CartRead>('/cart/add', { method: 'POST', auth: true, body: JSON.stringify(payload) }),
+
+  getCart: () => request<CartRead>('/cart', { auth: true }),
+
+  clearCart: () =>
+    request<{ message: string }>('/cart', { method: 'DELETE', auth: true }),
+
+  updateItem: (payload: CartItemUpdate) =>
+    request<CartRead>('/cart/update', { method: 'PUT', auth: true, body: JSON.stringify(payload) }),
+
+  removeItem: (productId: number) =>
+    request<CartRead>(`/cart/item/${productId}`, { method: 'DELETE', auth: true }),
+};
+
+// ─── Order types (match OrderRead / OrderItemRead / CheckoutRequest) ──────────
+
+export interface OrderItemRead {
+  id: number;
+  product_id: number;
+  vendor_id: number;
+  quantity: number;
+  price: number;
+  product_name: string | null;
+  vendor_name: string | null;
+}
+
+export interface OrderRead {
+  id: number;
+  user_id: number;
+  parent_order_id: number | null;
+  vendor_id: number | null;
+  status: string;
+  delivery_time: string | null;
+  payment_status: string;
+  total_price: number;
+  created_at: string;
+  completed_at: string | null;
+  items: OrderItemRead[];
+}
+
+export interface CheckoutRequest {
+  delivery_time?: string; // ISO datetime, optional
+}
+
+// ─── Order endpoints ──────────────────────────────────────────────────────────
+
+export const ordersApi = {
+  checkout: (payload: CheckoutRequest = {}) =>
+    request<OrderRead>('/orders/checkout', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
+
+  listOrders: () => request<OrderRead[]>('/orders', { auth: true }),
+
+  getOrder: (orderId: number) => request<OrderRead>(`/orders/${orderId}`, { auth: true }),
 };

@@ -1,8 +1,3 @@
-/**
- * (app) layout — Protected route group.
- * Redirects to /(auth)/login if the user is not authenticated.
- */
-
 import { Redirect, Stack } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
@@ -12,7 +7,6 @@ import { useAuth } from '@/context/auth';
 export default function AppLayout() {
   const { isSignedIn, isLoading } = useAuth();
 
-  // Wait for the initial token check before redirecting
   if (isLoading) {
     return (
       <View style={styles.loader}>
@@ -22,7 +16,7 @@ export default function AppLayout() {
   }
 
   if (!isSignedIn) {
-    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return <Redirect href={'/(auth)/login' as any} />;
   }
 
@@ -32,7 +26,10 @@ export default function AppLayout() {
         headerShown: false,
         contentStyle: { backgroundColor: FudsColors.background },
       }}
-    />
+    >
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="vendor/[id]" options={{ headerShown: false }} />
+    </Stack>
   );
 }
 
