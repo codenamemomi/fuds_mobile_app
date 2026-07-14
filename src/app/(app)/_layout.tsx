@@ -33,6 +33,7 @@ export default function AppLayout() {
       <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="password-security" options={{ headerShown: false }} />
       <Stack.Screen name="payment-settings" options={{ headerShown: false }} />
+      <Stack.Screen name="payment/[orderId]" options={{ headerShown: false }} />
       <Stack.Screen name="privacy-permissions" options={{ headerShown: false }} />
     </Stack>
   );

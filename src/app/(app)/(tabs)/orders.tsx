@@ -6,7 +6,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   StyleSheet,
@@ -138,6 +137,17 @@ export default function OrdersScreen() {
     }
   };
 
+  const openPayment = (orderId: number, total?: number) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    router.push({
+      pathname: '/(app)/payment/[orderId]' as any,
+      params: {
+        orderId: String(orderId),
+        ...(total != null ? { total: String(total) } : {}),
+      },
+    });
+  };
+
   const handleCheckout = async () => {
     if (!cart?.items.length) return;
     setCheckingOut(true);
@@ -148,14 +158,8 @@ export default function OrdersScreen() {
         ...EMPTY_CART,
         user_id: prev?.user_id ?? order.user_id,
       }));
-      // Refresh history and flip to My Orders
-      await loadOrders();
-      setSegment('history');
-      Alert.alert(
-        'Order placed!',
-        `Order #${order.id}\nTotal: ₦${Number(order.total_price).toLocaleString()}\nStatus: ${order.status}`,
-        [{ text: 'OK' }]
-      );
+      // Order is pending payment — go straight to Paystack card / Titan transfer
+      openPayment(order.id, Number(order.total_price));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Checkout failed');
     } finally {
@@ -348,7 +352,7 @@ export default function OrdersScreen() {
                   </Text>
                 </View>
                 <FudsButton
-                  label="Place order"
+                  label="Place order & pay"
                   loading={checkingOut}
                   onPress={handleCheckout}
                 />
@@ -413,6 +417,17 @@ export default function OrdersScreen() {
                     ₦{Number(item.total_price).toLocaleString()}
                   </Text>
                 </View>
+
+                {String(item.payment_status).toLowerCase() === 'pending' ? (
+                  <TouchableOpacity
+                    style={styles.payNowBtn}
+                    activeOpacity={0.88}
+                    onPress={() => openPayment(item.id, Number(item.total_price))}
+                  >
+                    <Ionicons name="card-outline" size={16} color={FudsColors.primaryForeground} />
+                    <Text style={styles.payNowText}>Pay now</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             );
           }}
@@ -662,4 +677,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   orderTotal: { fontSize: 18, fontWeight: '900', color: FudsColors.foreground },
+  payNowBtn: {
+    marginTop: Spacing.two,
+    marginLeft: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: FudsColors.primary,
+    paddingVertical: 12,
+    borderRadius: FudsRadius.md,
+  },
+  payNowText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: FudsColors.primaryForeground,
+  },
 });

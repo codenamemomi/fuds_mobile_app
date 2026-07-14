@@ -4,7 +4,7 @@
  */
 
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,6 +13,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -35,7 +36,7 @@ import {
   browseApi,
   isVendorOpen,
   type BrowseCategory,
-  type Product,
+  type ProductWithVendor,
   type Vendor,
 } from '@/lib/api';
 
@@ -64,7 +65,7 @@ export default function HomeScreen() {
 
   const [categories, setCategories] = useState<BrowseCategory[]>(FALLBACK_CATEGORIES);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [featured, setFeatured] = useState<Product[]>([]);
+  const [featured, setFeatured] = useState<ProductWithVendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +74,15 @@ export default function HomeScreen() {
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
+
+  // Meal search typeahead
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ProductWithVendor[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const searchInputRef = useRef<TextInput>(null);
+  const searchSeq = useRef(0);
 
   const loadData = useCallback(async (group: string | null) => {
     try {
@@ -126,6 +136,61 @@ export default function HomeScreen() {
     setActiveGroup((prev) => (prev === key ? null : key));
   };
 
+  const openSearch = () => {
+    setSearchOpen(true);
+    setSearchError(null);
+    setTimeout(() => searchInputRef.current?.focus(), 80);
+  };
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+    setSearchLoading(false);
+  };
+
+  // Debounced meal typeahead — only meals whose name matches what the user typed
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!searchOpen) return;
+
+    if (q.length < 1) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchError(null);
+      return;
+    }
+
+    const seq = ++searchSeq.current;
+    setSearchLoading(true);
+    setSearchError(null);
+
+    const timer = setTimeout(async () => {
+      try {
+        const rows = await browseApi.searchMeals(q, { limit: 20 });
+        if (seq !== searchSeq.current) return;
+        // Keep only rows that actually contain the typed text (name match)
+        const needle = q.toLowerCase();
+        const matched = rows.filter((p) => (p.name ?? '').toLowerCase().includes(needle));
+        setSearchResults(matched);
+      } catch (err) {
+        if (seq !== searchSeq.current) return;
+        setSearchResults([]);
+        setSearchError(err instanceof Error ? err.message : 'Search failed');
+      } finally {
+        if (seq === searchSeq.current) setSearchLoading(false);
+      }
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, searchOpen]);
+
+  const pickMeal = (product: ProductWithVendor) => {
+    closeSearch();
+    goToVendor(product.vendor_id);
+  };
+
   const activeLabel =
     categories.find((c) => c.key === activeGroup)?.label ?? 'All stores';
 
@@ -155,7 +220,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <>
-            {/* Location + filter — static, no animation */}
+            {/* Location + search — static, no animation */}
             <View style={styles.topBar}>
               <TouchableOpacity
                 style={styles.locationPill}
@@ -170,11 +235,113 @@ export default function HomeScreen() {
                 </Text>
                 <Ionicons name="chevron-down" size={14} color={FudsColors.mutedForeground} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.filterBtn} activeOpacity={0.85}>
-                <Ionicons name="options-outline" size={18} color={FudsColors.primaryForeground} />
-                <Text style={styles.filterLabel}>Filter</Text>
+              <TouchableOpacity
+                style={[styles.searchBtn, searchOpen && styles.searchBtnActive]}
+                activeOpacity={0.85}
+                onPress={() => (searchOpen ? closeSearch() : openSearch())}
+              >
+                <Ionicons
+                  name={searchOpen ? 'close' : 'search'}
+                  size={18}
+                  color={FudsColors.primaryForeground}
+                />
+                <Text style={styles.searchBtnLabel}>{searchOpen ? 'Close' : 'Search'}</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Meal search + typeahead dropdown */}
+            {searchOpen ? (
+              <View style={styles.searchPanel}>
+                <View style={styles.searchInputRow}>
+                  <Ionicons name="search" size={18} color={FudsColors.mutedForeground} />
+                  <TextInput
+                    ref={searchInputRef}
+                    style={styles.searchInput}
+                    placeholder="Search meals, dishes…"
+                    placeholderTextColor={FudsColors.mutedForeground}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    returnKeyType="search"
+                    clearButtonMode="while-editing"
+                  />
+                  {searchLoading ? (
+                    <ActivityIndicator size="small" color={FudsColors.primary} />
+                  ) : searchQuery.length > 0 ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setSearchQuery('');
+                        setSearchResults([]);
+                      }}
+                      hitSlop={8}
+                    >
+                      <Ionicons name="close-circle" size={18} color={FudsColors.mutedForeground} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                {searchError ? (
+                  <Text style={styles.searchError}>{searchError}</Text>
+                ) : null}
+
+                {searchQuery.trim().length >= 1 &&
+                !searchLoading &&
+                searchResults.length === 0 &&
+                !searchError ? (
+                  <View style={styles.unavailableBox}>
+                    <Text style={styles.unavailableText}>Unavailable</Text>
+                    <Text style={styles.unavailableSub}>
+                      No meal named “{searchQuery.trim()}” right now
+                    </Text>
+                  </View>
+                ) : null}
+
+                {searchResults.length > 0 ? (
+                  <View style={styles.searchDropdown}>
+                    {searchResults.map((item, idx) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[
+                          styles.searchRow,
+                          idx === searchResults.length - 1 && styles.searchRowLast,
+                        ]}
+                        activeOpacity={0.85}
+                        onPress={() => pickMeal(item)}
+                      >
+                        <View style={styles.searchThumbShell}>
+                          {item.image_url ? (
+                            <Image source={{ uri: item.image_url }} style={styles.searchThumb} />
+                          ) : (
+                            <View style={[styles.searchThumb, styles.searchThumbPlaceholder]}>
+                              <Ionicons
+                                name="restaurant-outline"
+                                size={16}
+                                color={FudsColors.mutedForeground}
+                              />
+                            </View>
+                          )}
+                        </View>
+                        <View style={styles.searchRowBody}>
+                          <Text style={styles.searchMealName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                          <Text style={styles.searchVendor} numberOfLines={1}>
+                            {item.vendor_name || 'Vendor'}
+                            {item.category
+                              ? ` · ${formatCategory(item.category)}`
+                              : ''}
+                          </Text>
+                        </View>
+                        <Text style={styles.searchPrice}>
+                          ₦{Number(item.price).toLocaleString()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
 
             {/* Category hub — animations ONLY here */}
             <View style={styles.categoryHub}>
@@ -467,7 +634,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: FudsColors.foreground,
   },
-  filterBtn: {
+  searchBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -477,10 +644,117 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     ...FudsShadow.sm,
   },
-  filterLabel: {
+  searchBtnActive: {
+    backgroundColor: FudsColors.foreground,
+  },
+  searchBtnLabel: {
     color: FudsColors.primaryForeground,
     fontWeight: '800',
     fontSize: 13,
+  },
+  searchPanel: {
+    marginHorizontal: Spacing.three,
+    marginBottom: Spacing.two,
+    zIndex: 20,
+  },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: FudsColors.card,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: FudsColors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    ...FudsShadow.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: FudsColors.foreground,
+    paddingVertical: 4,
+    minHeight: 28,
+  },
+  unavailableBox: {
+    marginTop: 10,
+    backgroundColor: FudsColors.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: FudsColors.border,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    ...FudsShadow.sm,
+  },
+  unavailableText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: FudsColors.mutedForeground,
+    letterSpacing: 0.3,
+  },
+  unavailableSub: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    color: FudsColors.mutedForeground,
+    textAlign: 'center',
+  },
+  searchError: {
+    marginTop: 8,
+    marginLeft: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    color: FudsColors.destructive,
+  },
+  searchDropdown: {
+    marginTop: 8,
+    backgroundColor: FudsColors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: FudsColors.border,
+    overflow: 'hidden',
+    ...FudsShadow.md,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: FudsColors.border,
+  },
+  searchRowLast: { borderBottomWidth: 0 },
+  searchThumbShell: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: FudsColors.border,
+  },
+  searchThumb: { width: 44, height: 44 },
+  searchThumbPlaceholder: {
+    backgroundColor: FudsColors.muted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchRowBody: { flex: 1, minWidth: 0 },
+  searchMealName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: FudsColors.foreground,
+  },
+  searchVendor: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: FudsColors.mutedForeground,
+    marginTop: 2,
+  },
+  searchPrice: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: FudsColors.primary,
   },
 
   categoryHub: {

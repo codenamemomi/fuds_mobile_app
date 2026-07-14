@@ -19,22 +19,22 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { FudsRadius, FudsShadow, Spacing } from '@/constants/theme';
 import { useFudsTheme } from '@/context/theme';
-import { ordersApi, type OrderRead } from '@/lib/api';
+import { paymentsApi, type PaymentRead } from '@/lib/api';
 import { safeGoBack } from '@/lib/navigation';
 
 export default function PaymentSettingsScreen() {
   const { colors } = useFudsTheme();
   const styles = useMemo(() => makeStyles(colors), [colors]);
-  const [orders, setOrders] = useState<OrderRead[]>([]);
+  const [payments, setPayments] = useState<PaymentRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const data = await ordersApi.listOrders();
-      setOrders(data.slice(0, 8));
+      const data = await paymentsApi.listPayments();
+      setPayments(data.slice(0, 10));
     } catch {
-      setOrders([]);
+      setPayments([]);
     }
   }, []);
 
@@ -77,8 +77,8 @@ export default function PaymentSettingsScreen() {
           </View>
           <Text style={styles.introTitle}>How you pay on FUDS</Text>
           <Text style={styles.introSub}>
-            Payments run through Paystack at checkout — card or bank transfer (Titan virtual
-            account). We don&apos;t store card numbers on FUDS.
+            Payments run through Paystack at checkout — card or bank transfer (temporary
+            account on Paystack&apos;s page). We don&apos;t store card numbers on FUDS.
           </Text>
         </View>
 
@@ -94,33 +94,37 @@ export default function PaymentSettingsScreen() {
             styles={styles}
             colors={colors}
             icon="business-outline"
-            title="Bank transfer (Titan)"
-            body="Transfer the exact amount to your dedicated virtual account."
+            title="Bank transfer"
+            body="Paystack shows a temporary account during checkout — no Dedicated NUBAN."
             last
           />
         </View>
 
-        <Text style={styles.sectionLabel}>RECENT PAYMENT STATUS</Text>
+        <Text style={styles.sectionLabel}>RECENT PAYMENT ATTEMPTS</Text>
         <View style={styles.card}>
           {loading ? (
             <ActivityIndicator color={colors.primary} style={{ margin: Spacing.four }} />
-          ) : orders.length === 0 ? (
-            <Text style={styles.empty}>No orders yet. Payment status appears after checkout.</Text>
+          ) : payments.length === 0 ? (
+            <Text style={styles.empty}>
+              No payments yet. After checkout, card or bank transfer attempts show here.
+            </Text>
           ) : (
-            orders.map((o, i) => (
+            payments.map((p, i) => (
               <View
-                key={o.id}
-                style={[styles.orderRow, i === orders.length - 1 && styles.rowLast]}
+                key={p.id}
+                style={[styles.orderRow, i === payments.length - 1 && styles.rowLast]}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.orderId}>Order #{o.id}</Text>
+                  <Text style={styles.orderId}>
+                    Order #{p.order_id} · {p.payment_method.replace('_', ' ')}
+                  </Text>
                   <Text style={styles.orderMeta}>
-                    {o.created_at ? new Date(o.created_at).toLocaleDateString() : '—'} · ₦
-                    {Number(o.total_price).toLocaleString()}
+                    {p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'} · ₦
+                    {Number(p.amount).toLocaleString()}
                   </Text>
                 </View>
                 <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{o.payment_status}</Text>
+                  <Text style={styles.badgeText}>{p.status}</Text>
                 </View>
               </View>
             ))

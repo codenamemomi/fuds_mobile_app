@@ -312,11 +312,26 @@ export const browseApi = {
     category?: string;
     group?: string;
     name?: string;
+    /** Alias for name — meal typeahead */
+    search?: string;
     min_price?: number;
     max_price?: number;
     page?: number;
     limit?: number;
-  }) => request<Product[]>(`/browse/products${toQuery(params as Record<string, string | number | undefined | null>)}`),
+  }) =>
+    request<ProductWithVendor[]>(
+      `/browse/products${toQuery(params as Record<string, string | number | undefined | null>)}`
+    ),
+
+  /** Debounced typeahead helper — meals matching query */
+  searchMeals: (query: string, opts?: { limit?: number; group?: string }) =>
+    request<ProductWithVendor[]>(
+      `/browse/products${toQuery({
+        search: query.trim(),
+        limit: opts?.limit ?? 10,
+        group: opts?.group,
+      })}`
+    ),
 
   getProduct: (productId: number) =>
     request<ProductWithVendor>(`/browse/products/${productId}`),
@@ -414,4 +429,120 @@ export const ordersApi = {
   listOrders: () => request<OrderRead[]>('/orders', { auth: true }),
 
   getOrder: (orderId: number) => request<OrderRead>(`/orders/${orderId}`, { auth: true }),
+};
+
+// ─── Payment types (Paystack card + bank transfer via Initialize Transaction) ─
+
+export interface InitializePaymentRequest {
+  order_id: number;
+  callback_url?: string;
+}
+
+export interface InitializePaymentResponse {
+  payment_id: number;
+  order_id: number;
+  reference: string;
+  access_code: string;
+  authorization_url: string;
+  amount: number;
+  amount_kobo: number;
+  currency: string;
+  status: string;
+  payment_method: string;
+}
+
+export interface InitializeTransferRequest {
+  order_id: number;
+  callback_url?: string;
+}
+
+export interface TransferAccountDetails {
+  account_number: string;
+  account_name: string;
+  bank_name: string;
+  bank_slug?: string | null;
+}
+
+/** Pay with Transfer — hosted checkout (channels bank_transfer), not Dedicated NUBAN */
+export interface InitializeTransferResponse {
+  payment_id: number;
+  order_id: number;
+  reference: string;
+  access_code: string;
+  authorization_url: string;
+  amount: number;
+  amount_kobo: number;
+  currency: string;
+  status: string;
+  payment_method: string;
+  channel: string;
+  instructions: string;
+  account?: TransferAccountDetails | null;
+  expires_hint?: string | null;
+}
+
+export interface PaymentRead {
+  id: number;
+  user_id: number;
+  order_id: number;
+  amount: number;
+  amount_kobo: number;
+  currency: string;
+  provider: string;
+  payment_method: string;
+  reference: string;
+  access_code?: string | null;
+  authorization_url?: string | null;
+  account_number?: string | null;
+  account_name?: string | null;
+  bank_name?: string | null;
+  bank_slug?: string | null;
+  account_expires_at?: string | null;
+  status: string;
+  provider_status?: string | null;
+  channel?: string | null;
+  gateway_response?: string | null;
+  provider_transaction_id?: string | null;
+  paystack_customer_code?: string | null;
+  paid_at?: string | null;
+  metadata_json?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VerifyPaymentResponse {
+  payment: PaymentRead;
+  order_payment_status: string;
+  message: string;
+}
+
+// ─── Payment endpoints ────────────────────────────────────────────────────────
+
+export const paymentsApi = {
+  /** Paystack hosted card / wallet checkout → open authorization_url in browser */
+  initialize: (payload: InitializePaymentRequest) =>
+    request<InitializePaymentResponse>('/payments/initialize', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
+
+  /** Pay with Transfer — Initialize Transaction with channels=["bank_transfer"] */
+  initializeTransfer: (payload: InitializeTransferRequest) =>
+    request<InitializeTransferResponse>('/payments/transfer/initialize', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
+
+  /** Confirm payment status with Paystack / local webhook state */
+  verify: (reference: string) =>
+    request<VerifyPaymentResponse>(`/payments/verify/${encodeURIComponent(reference)}`, {
+      auth: true,
+    }),
+
+  listPayments: () => request<PaymentRead[]>('/payments', { auth: true }),
+
+  getPayment: (paymentId: number) =>
+    request<PaymentRead>(`/payments/${paymentId}`, { auth: true }),
 };
