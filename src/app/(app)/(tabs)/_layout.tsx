@@ -1,11 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { Platform, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useFudsTheme } from '@/context/theme';
 
 export default function TabsLayout() {
   const { colors } = useFudsTheme();
+  const insets = useSafeAreaInsets();
+
+  const isIos = Platform.OS === 'ios';
+  
+  // Dynamically calculate padding and height using safe area insets to prevent overlap with device navigation bars
+  const bottomPadding = isIos
+    ? (insets.bottom > 0 ? insets.bottom - 6 : 20)
+    : (insets.bottom > 0 ? insets.bottom + 6 : 10);
+    
+  const tabHeight = isIos
+    ? (insets.bottom > 0 ? 56 + insets.bottom : 76)
+    : (insets.bottom > 0 ? 56 + insets.bottom : 64);
 
   return (
     <Tabs
@@ -23,9 +36,9 @@ export default function TabsLayout() {
           shadowOpacity: 0.1,
           shadowRadius: 10,
           opacity: 1,
-          height: Platform.OS === 'ios' ? 88 : 64,
+          height: tabHeight,
           paddingTop: 6,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+          paddingBottom: bottomPadding,
         },
         tabBarLabelStyle: {
           fontSize: 11,

@@ -1,7 +1,7 @@
 /**
  * Splash Screen
- * Green background with FUDS logo, ambient glow, tagline.
- * Auto-navigates after 2.5s:
+ * Green background with FUDS logo (app icon), shine + glow animations, tagline.
+ * Auto-navigates after ~2.8s:
  *   - If token exists → /(app)
  *   - Otherwise → /(auth)/register
  */
@@ -11,6 +11,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
+  Image,
   StyleSheet,
   Text,
   View,
@@ -20,45 +21,106 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FudsColors } from '@/constants/theme';
 import { getToken } from '@/lib/token';
 
+const LOGO = require('@/assets/images/icon.png');
+
 export default function SplashScreen() {
-  const logoScale = useRef(new Animated.Value(0.7)).current;
+  const logoScale = useRef(new Animated.Value(0.72)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const taglineOpacity = useRef(new Animated.Value(0)).current;
   const pulseOpacity = useRef(new Animated.Value(0.3)).current;
+  const glowPulse = useRef(new Animated.Value(0.35)).current;
+  const shineX = useRef(new Animated.Value(-140)).current;
+  const floatY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Entrance animation
+    // Entrance: fade + spring scale
     Animated.sequence([
       Animated.parallel([
         Animated.timing(logoOpacity, {
           toValue: 1,
-          duration: 600,
+          duration: 650,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.spring(logoScale, {
           toValue: 1,
           friction: 6,
-          tension: 80,
+          tension: 72,
           useNativeDriver: true,
         }),
       ]),
       Animated.timing(taglineOpacity, {
         toValue: 1,
-        duration: 400,
+        duration: 420,
         useNativeDriver: true,
       }),
     ]).start();
 
-    // Pulsing dot
+    // Soft ambient glow breathing
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseOpacity, { toValue: 1, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseOpacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+        Animated.timing(glowPulse, {
+          toValue: 0.7,
+          duration: 1400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowPulse, {
+          toValue: 0.35,
+          duration: 1400,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
       ])
     ).start();
 
-    // Navigate after 2.5s
+    // Gentle float on the logo
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatY, {
+          toValue: -6,
+          duration: 1600,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatY, {
+          toValue: 0,
+          duration: 1600,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // Diagonal shine sweep across the logo (repeats)
+    const runShine = () => {
+      shineX.setValue(-140);
+      Animated.timing(shineX, {
+        toValue: 200,
+        duration: 1100,
+        easing: Easing.inOut(Easing.quad),
+        useNativeDriver: true,
+      }).start();
+    };
+    const shineStart = setTimeout(runShine, 700);
+    const shineLoop = setInterval(runShine, 2400);
+
+    // Footer pulse bar
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseOpacity, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseOpacity, {
+          toValue: 0.3,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
     const timer = setTimeout(async () => {
       const token = await getToken();
       if (token) {
@@ -68,43 +130,57 @@ export default function SplashScreen() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         router.replace('/(auth)/register' as any);
       }
-    }, 2500);
+    }, 2800);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(shineStart);
+      clearInterval(shineLoop);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <View style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        {/* Ambient glow */}
-        <View style={styles.ambientGlow} />
+        <Animated.View style={[styles.ambientGlow, { opacity: glowPulse }]} />
 
-        {/* Spacer */}
         <View />
 
-        {/* Brand identity */}
         <Animated.View
           style={[
             styles.brandBlock,
-            { opacity: logoOpacity, transform: [{ scale: logoScale }] },
+            {
+              opacity: logoOpacity,
+              transform: [{ scale: logoScale }, { translateY: floatY }],
+            },
           ]}
         >
-          {/* Logo box */}
-          <View style={styles.logoBox}>
-            <Text style={styles.logoEmoji}>🥘</Text>
+          {/* Logo itself (no placeholder box) + shine sweep */}
+          <View style={styles.logoWrap}>
+            <Image source={LOGO} style={styles.logoImage} resizeMode="contain" />
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.shineBand,
+                {
+                  transform: [
+                    { translateX: shineX },
+                    { rotate: '22deg' },
+                  ],
+                },
+              ]}
+            />
           </View>
 
-          {/* Brand name + tagline */}
           <View style={styles.brandText}>
             <Text style={styles.brandName}>FUDS</Text>
             <Animated.Text style={[styles.brandTagline, { opacity: taglineOpacity }]}>
-              LAGOS' PREMIUM FOOD &amp; GROCERY SCHEDULER
+              FOODS DELIVERED SMART
             </Animated.Text>
           </View>
         </Animated.View>
 
-        {/* Footer */}
         <Animated.View style={[styles.footer, { opacity: taglineOpacity }]}>
           <Text style={styles.footerText}>Breakfast · Lunch · Dinner</Text>
           <Animated.View style={[styles.pulseDot, { opacity: pulseOpacity }]} />
@@ -113,6 +189,8 @@ export default function SplashScreen() {
     </View>
   );
 }
+
+const LOGO_SIZE = 132;
 
 const styles = StyleSheet.create({
   container: {
@@ -128,34 +206,40 @@ const styles = StyleSheet.create({
   },
   ambientGlow: {
     position: 'absolute',
-    top: 0,
+    top: '22%',
     alignSelf: 'center',
-    width: 280,
-    height: 280,
-    borderRadius: 140,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
     backgroundColor: FudsColors.secondary,
-    opacity: 0.2,
-    // blur is not supported in RN without a library; use opacity for the effect
   },
   brandBlock: {
     alignItems: 'center',
-    gap: 24,
+    gap: 22,
   },
-  logoBox: {
-    width: 128,
-    height: 128,
-    backgroundColor: FudsColors.background,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoWrap: {
+    width: LOGO_SIZE,
+    height: LOGO_SIZE,
+    borderRadius: 32,
+    overflow: 'hidden',
+    // Soft lift so the mark reads off the green field
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.28,
+    shadowRadius: 22,
+    elevation: 12,
   },
-  logoEmoji: {
-    fontSize: 56,
+  logoImage: {
+    width: LOGO_SIZE,
+    height: LOGO_SIZE,
+  },
+  /** Light band that sweeps across the logo for a shine */
+  shineBand: {
+    position: 'absolute',
+    top: -20,
+    bottom: -20,
+    width: 48,
+    backgroundColor: 'rgba(255,255,255,0.38)',
   },
   brandText: {
     alignItems: 'center',
