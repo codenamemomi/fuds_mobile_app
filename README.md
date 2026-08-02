@@ -1,50 +1,93 @@
-# Welcome to your Expo app 👋
+# FUDS Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+This is the Expo-based mobile client for FUDS, a food delivery experience built with React Native, Expo Router, and a FastAPI backend.
 
-## Get started
+## What the app includes
 
-1. Install dependencies
+- Splash and authentication flow with registration, login, OTP verification, and profile setup
+- Home browsing with categories, vendor discovery, search, and meal discovery
+- Vendor and product screens for browsing offers and item details
+- Cart, checkout, and order tracking flows
+- Payment setup with Paystack integration and account settings
+- Privacy, permissions, and support/settings screens
 
-   ```bash
-   npm install
-   ```
+## Tech stack
 
-2. Start the app
+- Expo SDK 54
+- React Native 0.81
+- Expo Router
+- TypeScript
+- Expo Secure Store, Location, Haptics, and Web Browser
 
-   ```bash
-   npx expo start
-   ```
+## Prerequisites
 
-In the output, you'll find options to open the app in a
+Make sure you have:
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- Node.js 20+ and npm
+- An Expo-compatible device or emulator
+- The FUDS backend running and reachable
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## Setup
 
-## Get a fresh project
-
-When you're ready, run:
+From the project root:
 
 ```bash
+cd /home/codenamemomi/Documents/FUDS/dev/fuds_mobile_app_fresh
+npm install
+```
+
+## Run the app
+
+Start the development server:
+
+```bash
+npm start
+```
+
+Then open one of the following:
+
+- Android emulator: `npm run android`
+- iOS simulator: `npm run ios`
+- Web preview: `npm run web`
+
+## Backend connection
+
+The mobile app calls the FastAPI backend under `/api/v1`. The backend URL is resolved in [src/config/backend.ts](src/config/backend.ts).
+
+For local development, update the configured backend origin if needed:
+
+```ts
+// src/config/backend.ts
+export const EXPLICIT_BACKEND_URL = 'http://192.168.1.102:8000';
+```
+
+Useful defaults:
+
+- Android emulator: `http://10.0.2.2:8000`
+- iOS simulator / web: `http://localhost:8000`
+- Physical device on the same network: your computer LAN IP, for example `http://192.168.1.42:8000`
+
+## Project structure
+
+- [src/app](src/app) — Expo Router screens and routes
+- [src/components](src/components) — reusable UI elements
+- [src/context](src/context) — authentication and theme state
+- [src/lib](src/lib) — API client, token helpers, and app logic
+- [src/config](src/config) — backend and environment configuration
+
+## Useful scripts
+
+```bash
+npm start
+npm run android
+npm run ios
+npm run web
+npm run lint
 npm run reset-project
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Troubleshooting
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- If you see a network error, confirm the backend is running and that the backend URL in [src/config/backend.ts](src/config/backend.ts) matches your environment.
+- If authentication fails, verify the backend auth endpoints and that the app can reach them.
+- If location or permissions are not working, ensure the emulator/device has the required permissions enabled.

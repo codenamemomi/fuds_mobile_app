@@ -1,44 +1,17 @@
 /**
  * FUDS API Client
  * Connects to the FastAPI backend at /api/v1/*
- * Base URL is configured via app.json extras → Constants.expoConfig.extra.apiBaseUrl
+ *
+ * Backend origin is configured in `@/config/backend` (EXPLICIT_BACKEND_URL,
+ * Expo host, or app.json extra.apiBaseUrl).
  */
 
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { API_PREFIX, BACKEND_URL } from '@/config/backend';
 
 import { getToken } from './token';
 
-const getApiBaseUrl = (): string => {
-  if (__DEV__) {
-    const hostUri = Constants.expoConfig?.hostUri; // e.g. "192.168.1.15:8081"
-    if (hostUri) {
-      const hostIp = hostUri.split(':')[0];
-      if (hostIp && hostIp !== 'localhost' && hostIp !== '127.0.0.1') {
-        return `http://${hostIp}:8000`;
-      }
-    }
-  }
-
-  const configuredUrl = Constants.expoConfig?.extra?.apiBaseUrl as string;
-  if (!configuredUrl) {
-    return 'http://localhost:8000';
-  }
-  if (Platform.OS === 'android') {
-    return configuredUrl;
-  }
-  if (configuredUrl.includes('10.0.2.2')) {
-    return configuredUrl.replace('10.0.2.2', 'localhost');
-  }
-  return configuredUrl;
-};
-
-const BASE_URL: string = getApiBaseUrl();
-if (__DEV__) {
-  console.log('[FUDS API] Resolved BASE_URL:', BASE_URL);
-}
-
-const API_PREFIX = '/api/v1';
+/** Backend origin — re-exported for screens that need it (debug, settings). */
+export { BACKEND_URL, API_PREFIX, apiUrl, getBackendUrl } from '@/config/backend';
 
 // ─── Auth types ───────────────────────────────────────────────────────────────
 
@@ -117,10 +90,22 @@ async function request<T>(
     }
   }
 
-  const response = await fetch(`${BASE_URL}${API_PREFIX}${path}`, {
-    ...rest,
-    headers,
-  });
+  const url = `${BACKEND_URL}${API_PREFIX}${path}`;
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...rest,
+      headers,
+    });
+  } catch (err) {
+    // TypeError: fetch failed / Network request failed — host unreachable
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Cannot reach API at ${url} (${reason}). ` +
+        `Is the backend running? On a physical phone set EXPLICIT_BACKEND_URL ` +
+        `in src/config/backend.ts to your PC LAN IP (e.g. http://192.168.x.x:8000).`
+    );
+  }
 
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;

@@ -5,13 +5,11 @@
  * POST /api/v1/auth/resend-otp → resets countdown
  */
 
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -21,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FudsButton } from '@/components/ui/fuds-button';
+import { KeyboardScreen } from '@/components/ui/keyboard-screen';
 import { StepDots } from '@/components/ui/step-dots';
 import { FudsColors, FudsRadius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
@@ -113,11 +112,8 @@ export default function VerifyOtpScreen() {
   const countdownStr = `0:${countdown.toString().padStart(2, '0')}`;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardScreen contentContainerStyle={styles.scroll} scrollOnKeyboardShow={false}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
@@ -187,18 +183,18 @@ export default function VerifyOtpScreen() {
             onPress={handleVerify}
           />
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardScreen>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   container: {
     flex: 1,
     backgroundColor: FudsColors.background,
+  },
+  scroll: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingBottom: 32,
   },
@@ -223,9 +219,10 @@ const styles = StyleSheet.create({
   },
   backArrow: { fontSize: 20, color: FudsColors.foreground },
   body: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
     gap: Spacing.five,
+    paddingVertical: Spacing.four,
   },
   titleBlock: { gap: 8 },
   title: {

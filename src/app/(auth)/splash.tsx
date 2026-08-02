@@ -1,7 +1,7 @@
 /**
  * Splash Screen
  * Green background with FUDS logo (app icon), shine + glow animations, tagline.
- * Auto-navigates after ~2.8s:
+ * Auto-navigates after ~4.2s:
  *   - If token exists → /(app)
  *   - Otherwise → /(auth)/register
  */
@@ -24,8 +24,9 @@ import { getToken } from '@/lib/token';
 const LOGO = require('@/assets/images/icon.png');
 
 export default function SplashScreen() {
-  const logoScale = useRef(new Animated.Value(0.72)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
+  // Logo is fully visible on first paint — no entrance delay
+  const logoScale = useRef(new Animated.Value(1)).current;
+  const logoOpacity = useRef(new Animated.Value(1)).current;
   const taglineOpacity = useRef(new Animated.Value(0)).current;
   const pulseOpacity = useRef(new Animated.Value(0.3)).current;
   const glowPulse = useRef(new Animated.Value(0.35)).current;
@@ -33,28 +34,13 @@ export default function SplashScreen() {
   const floatY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Entrance: fade + spring scale
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(logoOpacity, {
-          toValue: 1,
-          duration: 650,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.spring(logoScale, {
-          toValue: 1,
-          friction: 6,
-          tension: 72,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.timing(taglineOpacity, {
-        toValue: 1,
-        duration: 420,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Tagline / footer fade in shortly after logo is already on screen
+    Animated.timing(taglineOpacity, {
+      toValue: 1,
+      duration: 400,
+      delay: 120,
+      useNativeDriver: true,
+    }).start();
 
     // Soft ambient glow breathing
     Animated.loop(
@@ -92,7 +78,7 @@ export default function SplashScreen() {
       ])
     ).start();
 
-    // Diagonal shine sweep across the logo (repeats)
+    // Diagonal shine sweep across the logo (starts ASAP, then repeats)
     const runShine = () => {
       shineX.setValue(-140);
       Animated.timing(shineX, {
@@ -102,7 +88,7 @@ export default function SplashScreen() {
         useNativeDriver: true,
       }).start();
     };
-    const shineStart = setTimeout(runShine, 700);
+    const shineStart = setTimeout(runShine, 80);
     const shineLoop = setInterval(runShine, 2400);
 
     // Footer pulse bar
@@ -130,7 +116,7 @@ export default function SplashScreen() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         router.replace('/(auth)/register' as any);
       }
-    }, 2800);
+    }, 4200);
 
     return () => {
       clearTimeout(timer);

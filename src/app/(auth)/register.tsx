@@ -8,9 +8,6 @@ import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -21,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FudsButton } from '@/components/ui/fuds-button';
 import { FudsInput } from '@/components/ui/fuds-input';
+import { KeyboardScreen } from '@/components/ui/keyboard-screen';
 import { PasswordChecklist } from '@/components/ui/password-checklist';
 import { StepDots } from '@/components/ui/step-dots';
 import { FudsColors, FudsRadius, Spacing } from '@/constants/theme';
@@ -80,16 +78,8 @@ export default function RegisterScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardScreen contentContainerStyle={styles.scroll}>
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity
@@ -233,14 +223,12 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardScreen>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   container: {
     flex: 1,
     backgroundColor: FudsColors.background,

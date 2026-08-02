@@ -6,9 +6,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -19,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { FudsButton } from '@/components/ui/fuds-button';
 import { FudsInput } from '@/components/ui/fuds-input';
+import { KeyboardScreen } from '@/components/ui/keyboard-screen';
 import { PasswordChecklist } from '@/components/ui/password-checklist';
 import { FudsRadius, FudsShadow, Spacing } from '@/constants/theme';
 import { useFudsTheme } from '@/context/theme';
@@ -85,28 +83,20 @@ export default function PasswordSecurityScreen() {
     currentPassword !== newPassword;
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => safeGoBack('/(app)/settings')}
-            hitSlop={8}
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.foreground} />
-          </TouchableOpacity>
-          <Text style={styles.topTitle}>Password & security</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => safeGoBack('/(app)/settings')}
+          hitSlop={8}
         >
+          <Ionicons name="chevron-back" size={22} color={colors.foreground} />
+        </TouchableOpacity>
+        <Text style={styles.topTitle}>Password & security</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <KeyboardScreen contentContainerStyle={styles.scroll} offset={8}>
           <View style={styles.intro}>
             <View style={styles.introIcon}>
               <Ionicons name="lock-closed" size={22} color={colors.primary} />
@@ -173,8 +163,7 @@ export default function PasswordSecurityScreen() {
               style={{ marginTop: Spacing.two }}
             />
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardScreen>
     </SafeAreaView>
   );
 }

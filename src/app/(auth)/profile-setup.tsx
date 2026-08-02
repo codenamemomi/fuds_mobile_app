@@ -7,9 +7,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -20,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { AddressField } from '@/components/ui/address-field';
 import { FudsButton } from '@/components/ui/fuds-button';
+import { KeyboardScreen } from '@/components/ui/keyboard-screen';
 import { StepDots } from '@/components/ui/step-dots';
 import { FudsColors, FudsRadius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
@@ -69,16 +67,8 @@ export default function ProfileSetupScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardScreen contentContainerStyle={styles.scroll}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft} />
@@ -159,14 +149,12 @@ export default function ProfileSetupScreen() {
               <Text style={styles.skipText}>Skip for now</Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardScreen>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   container: {
     flex: 1,
     backgroundColor: FudsColors.background,

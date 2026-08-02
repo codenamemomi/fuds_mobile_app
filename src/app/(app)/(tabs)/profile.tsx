@@ -7,9 +7,6 @@ import { router } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -23,6 +20,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { AddressField } from '@/components/ui/address-field';
 import { FudsButton } from '@/components/ui/fuds-button';
 import { FudsInput } from '@/components/ui/fuds-input';
+import { KeyboardScreen } from '@/components/ui/keyboard-screen';
 import { FudsColors, FudsRadius, FudsShadow, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
 
@@ -165,15 +163,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
+      <KeyboardScreen contentContainerStyle={styles.content}>
           <View style={styles.titleRow}>
             <Text style={styles.pageTitle}>Profile</Text>
             <View style={styles.titleActions}>
@@ -375,8 +365,7 @@ export default function ProfileScreen() {
             }}
             style={{ marginTop: Spacing.four }}
           />
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardScreen>
     </SafeAreaView>
   );
 }

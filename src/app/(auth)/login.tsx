@@ -8,9 +8,6 @@ import { router } from 'expo-router';
 import React, { useRef, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -21,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FudsButton } from '@/components/ui/fuds-button';
 import { FudsInput } from '@/components/ui/fuds-input';
+import { KeyboardScreen } from '@/components/ui/keyboard-screen';
 import { FudsColors, FudsRadius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
 
@@ -60,121 +58,110 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Brand mark */}
-          <View style={styles.brandMark}>
-            <View style={styles.logoBox}>
-              <Text style={styles.logoEmoji}>🥘</Text>
-            </View>
-            <Text style={styles.brandName}>FUDS</Text>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <KeyboardScreen contentContainerStyle={styles.scroll}>
+        {/* Brand mark */}
+        <View style={styles.brandMark}>
+          <View style={styles.logoBox}>
+            <Text style={styles.logoEmoji}>🥘</Text>
           </View>
+          <Text style={styles.brandName}>FUDS</Text>
+        </View>
 
-          {/* Title */}
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>Welcome back</Text>
-            <Text style={styles.subtitle}>Sign in to your FUDS account.</Text>
-          </View>
+        {/* Title */}
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>Welcome back</Text>
+          <Text style={styles.subtitle}>Sign in to your FUDS account.</Text>
+        </View>
 
-          {/* Form */}
-          <View style={styles.form}>
-            {/* Phone with prefix */}
-            <View style={styles.fieldWrap}>
-              <Text style={styles.fieldLabel}>MOBILE NUMBER</Text>
-              <View
-                style={[
-                  styles.phoneRow,
-                  !!errors.phone && styles.phoneRowError,
-                ]}
-              >
-                <View style={styles.dialCode}>
-                  <Text style={styles.flag}>🇳🇬</Text>
-                  <Text style={styles.dialCodeText}>+234</Text>
-                  <View style={styles.dialDivider} />
-                </View>
-                <TextInput
-                  style={styles.phoneInput}
-                  placeholder="803 123 4567"
-                  placeholderTextColor={FudsColors.mutedForeground}
-                  keyboardType="phone-pad"
-                  returnKeyType="next"
-                  value={phone}
-                  onChangeText={setPhone}
-                  onSubmitEditing={() => passwordRef.current?.focus()}
-                />
+        {/* Form */}
+        <View style={styles.form}>
+          {/* Phone with prefix */}
+          <View style={styles.fieldWrap}>
+            <Text style={styles.fieldLabel}>MOBILE NUMBER</Text>
+            <View
+              style={[
+                styles.phoneRow,
+                !!errors.phone && styles.phoneRowError,
+              ]}
+            >
+              <View style={styles.dialCode}>
+                <Text style={styles.flag}>🇳🇬</Text>
+                <Text style={styles.dialCodeText}>+234</Text>
+                <View style={styles.dialDivider} />
               </View>
-              {errors.phone && <Text style={styles.fieldError}>{errors.phone}</Text>}
+              <TextInput
+                style={styles.phoneInput}
+                placeholder="803 123 4567"
+                placeholderTextColor={FudsColors.mutedForeground}
+                keyboardType="phone-pad"
+                returnKeyType="next"
+                value={phone}
+                onChangeText={setPhone}
+                onSubmitEditing={() => passwordRef.current?.focus()}
+              />
             </View>
-
-            <FudsInput
-              ref={passwordRef}
-              label="Password"
-              placeholder="Your password"
-              secureTextEntry={!showPassword}
-              returnKeyType="done"
-              value={password}
-              onChangeText={setPassword}
-              onSubmitEditing={handleLogin}
-              error={errors.password}
-              leftContent={<Text style={styles.fieldIcon}>🔒</Text>}
-              rightContent={
-                <Text
-                  style={styles.togglePassword}
-                  onPress={() => setShowPassword((v) => !v)}
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </Text>
-              }
-            />
+            {errors.phone && <Text style={styles.fieldError}>{errors.phone}</Text>}
           </View>
 
-          {/* CTA */}
-          <View style={styles.cta}>
-            <FudsButton
-              label="Sign In →"
-              loading={loading}
-              onPress={handleLogin}
-            />
+          <FudsInput
+            ref={passwordRef}
+            label="Password"
+            placeholder="Your password"
+            secureTextEntry={!showPassword}
+            returnKeyType="done"
+            value={password}
+            onChangeText={setPassword}
+            onSubmitEditing={handleLogin}
+            error={errors.password}
+            leftContent={<Text style={styles.fieldIcon}>🔒</Text>}
+            rightContent={
+              <Text
+                style={styles.togglePassword}
+                onPress={() => setShowPassword((v) => !v)}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </Text>
+            }
+          />
+        </View>
 
-            <View style={styles.registerRow}>
-              <Text style={styles.registerText}>Don&apos;t have an account? </Text>
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              <TouchableOpacity onPress={() => router.replace('/(auth)/register' as any)}>
-                <Text style={styles.registerLink}>Register</Text>
-              </TouchableOpacity>
-            </View>
+        {/* CTA */}
+        <View style={styles.cta}>
+          <FudsButton
+            label="Sign In →"
+            loading={loading}
+            onPress={handleLogin}
+          />
+
+          <View style={styles.registerRow}>
+            <Text style={styles.registerText}>Don&apos;t have an account? </Text>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            <TouchableOpacity onPress={() => router.replace('/(auth)/register' as any)}>
+              <Text style={styles.registerLink}>Register</Text>
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </KeyboardScreen>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   container: {
     flex: 1,
     backgroundColor: FudsColors.background,
   },
   scroll: {
-    flexGrow: 1,
+    // Avoid justifyContent: 'center' — it traps inputs under the Android keyboard
     paddingHorizontal: 24,
-    paddingBottom: 32,
-    justifyContent: 'center',
+    paddingTop: Spacing.four,
     gap: Spacing.five,
   },
   brandMark: {
     alignItems: 'center',
     gap: 12,
-    paddingTop: Spacing.four,
+    paddingTop: Spacing.two,
   },
   logoBox: {
     width: 72,
