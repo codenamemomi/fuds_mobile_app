@@ -16,9 +16,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { FudsButton } from '@/components/ui/fuds-button';
 import {
+  BottomTabInset,
   FudsColors,
   FudsRadius,
   FudsShadow,
@@ -50,12 +51,21 @@ function statusColor(status: string): { bg: string; text: string } {
   return { bg: FudsColors.muted, text: FudsColors.mutedForeground };
 }
 
+function readTabParam(tab: string | string[] | undefined): Segment | null {
+  const value = Array.isArray(tab) ? tab[0] : tab;
+  if (value === 'history' || value === 'orders') return 'history';
+  if (value === 'cart') return 'cart';
+  return null;
+}
+
 export default function OrdersScreen() {
   const insets = useSafeAreaInsets();
   // Footer sits above the solid tab bar (Tabs no longer overlays content)
-  const tabClearance = Spacing.two + Math.max(insets.bottom, 8);
+  const tabClearance = BottomTabInset + Math.max(insets.bottom, 8);
+  const params = useLocalSearchParams<{ tab?: string | string[] }>();
+  const requestedTab = readTabParam(params.tab);
 
-  const [segment, setSegment] = useState<Segment>('cart');
+  const [segment, setSegment] = useState<Segment>(requestedTab ?? 'cart');
   const [cart, setCart] = useState<CartRead | null>(null);
   const [orders, setOrders] = useState<OrderRead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,11 +107,17 @@ export default function OrdersScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      const next = requestedTab;
+      if (next) {
+        setSegment(next);
+        // Consume the one-shot param so later tab visits don't stick on history.
+        router.setParams({ tab: '' });
+      }
       loadCart();
-      if (segment === 'history') {
+      if (next === 'history' || segment === 'history') {
         loadOrders();
       }
-    }, [loadCart, loadOrders, segment])
+    }, [loadCart, loadOrders, requestedTab, segment])
   );
 
   useEffect(() => {

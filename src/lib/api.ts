@@ -11,7 +11,7 @@ import { API_PREFIX, BACKEND_URL } from '@/config/backend';
 import { getToken } from './token';
 
 /** Backend origin — re-exported for screens that need it (debug, settings). */
-export { BACKEND_URL, API_PREFIX, apiUrl, getBackendUrl } from '@/config/backend';
+export { API_PREFIX, apiUrl, BACKEND_URL, getBackendUrl } from '@/config/backend';
 
 // ─── Auth types ───────────────────────────────────────────────────────────────
 
@@ -322,6 +322,28 @@ export const browseApi = {
     request<ProductWithVendor>(`/browse/products/${productId}`),
 };
 
+// ─── Marketplace endpoints ────────────────────────────────────────────────────
+
+export interface GroceryAisleRead {
+  key: string;
+  label: string;
+  subtitle: string;
+  icon: string;
+  product_count: number;
+}
+
+export interface GroceryCatalogRead {
+  aisles: GroceryAisleRead[];
+  products: ProductWithVendor[];
+}
+
+export const marketplaceApi = {
+  listAisles: () => request<GroceryAisleRead[]>('/marketplace/aisles'),
+
+  getCatalog: (params?: { aisle?: string; search?: string }) =>
+    request<GroceryCatalogRead>(`/marketplace/catalog${toQuery(params as Record<string, string | number | undefined | null>)}`),
+};
+
 // ─── Cart types (match CartItemCreate / CartItemUpdate / CartItemRead / CartRead) ──
 
 export interface CartItemCreate {
@@ -530,4 +552,113 @@ export const paymentsApi = {
 
   getPayment: (paymentId: number) =>
     request<PaymentRead>(`/payments/${paymentId}`, { auth: true }),
+};
+
+// ─── 111 schedule ─────────────────────────────────────────────────────────────
+
+export type MealType = 'breakfast' | 'lunch' | 'dinner';
+
+export interface MealWindowRead {
+  meal_type: MealType | string;
+  label: string;
+  start: string;
+  end: string;
+  range_label: string;
+  slot_times: string[];
+}
+
+export interface ScheduledMealRead {
+  id: number;
+  user_id: number;
+  meal_type: MealType | string;
+  delivery_date: string;
+  delivery_time: string;
+  slot_time: string;
+  vendor_id: number | null;
+  product_id: number | null;
+  quantity: number;
+  order_id: number | null;
+  status: string;
+  created_at: string;
+  product_name: string | null;
+  product_price: number | null;
+  product_image_url: string | null;
+  vendor_name: string | null;
+  subtotal: number | null;
+}
+
+export interface ScheduleDayRead {
+  date: string;
+  weekday: string;
+  label: string;
+  is_today: boolean;
+  is_past: boolean;
+  available_slots: Record<string, string[]>;
+  meals: Record<string, ScheduledMealRead[]>;
+}
+
+export interface ScheduleWeekRead {
+  timezone: string;
+  windows: MealWindowRead[];
+  days: ScheduleDayRead[];
+}
+
+export interface ScheduledMealCreate {
+  meal_type: MealType;
+  delivery_date: string;
+  slot_time: string;
+  product_id?: number;
+  quantity?: number;
+}
+
+export interface ScheduledMealUpdate {
+  slot_time?: string;
+  product_id?: number;
+  quantity?: number;
+  clear_product?: boolean;
+}
+
+export interface ScheduleCheckoutRequest {
+  delivery_date: string;
+  meal_types?: MealType[];
+}
+
+export const scheduleApi = {
+  listWindows: () => request<MealWindowRead[]>('/schedule/windows'),
+
+  getWeek: (start?: string) =>
+    request<ScheduleWeekRead>(`/schedule/week${toQuery({ start })}`, { auth: true }),
+
+  list: (deliveryDate?: string) =>
+    request<ScheduledMealRead[]>(
+      `/schedule${toQuery({ delivery_date: deliveryDate })}`,
+      { auth: true }
+    ),
+
+  upsert: (payload: ScheduledMealCreate) =>
+    request<ScheduledMealRead>('/schedule', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
+
+  update: (mealId: number, payload: ScheduledMealUpdate) =>
+    request<ScheduledMealRead>(`/schedule/${mealId}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
+
+  remove: (mealId: number) =>
+    request<{ message: string }>(`/schedule/${mealId}`, {
+      method: 'DELETE',
+      auth: true,
+    }),
+
+  checkout: (payload: ScheduleCheckoutRequest) =>
+    request<OrderRead>('/schedule/checkout', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
 };

@@ -29,6 +29,8 @@ export default function AppLayout() {
       }}
     >
       <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="marketplace" options={{ headerShown: false }} />
+      <Stack.Screen name="schedule/pick-meal" options={{ headerShown: false }} />
       <Stack.Screen name="vendor/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="password-security" options={{ headerShown: false }} />

@@ -3,12 +3,14 @@
  * Animations are limited to the category section only.
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
+  Keyboard,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,14 +19,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddressEditModal } from '@/components/ui/address-edit-modal';
 import { AnimatedPressable } from '@/components/ui/animated-pressable';
-import { FadeIn as FadeInView } from '@/components/ui/fade-in';
 import { FALLBACK_CATEGORIES, getCategoryVisual } from '@/constants/browse';
 import {
+  BottomTabInset,
   FudsColors,
   FudsImages,
   FudsRadius,
@@ -60,8 +61,8 @@ function reopenLabel(vendor: Vendor): string {
 
 export default function HomeScreen() {
   const { user, updateProfile } = useAuth();
-  // Standard Tabs already reserve space; only a small buffer is needed
-  const listBottomPad = Spacing.four;
+  const insets = useSafeAreaInsets();
+  const listBottomPad = BottomTabInset + Math.max(insets.bottom, 8);
 
   const [categories, setCategories] = useState<BrowseCategory[]>(FALLBACK_CATEGORIES);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -92,7 +93,9 @@ export default function HomeScreen() {
         browseApi.listVendors(group ? { group, limit: 40 } : { limit: 40 }),
         browseApi.listProducts(group ? { group, limit: 12 } : { limit: 12 }),
       ]);
-      setCategories(cats.length ? cats : FALLBACK_CATEGORIES);
+      // Don't swap the category array on every filter — remounting the grid
+      // was making icons vanish on the second tap (APK).
+      setCategories((prev) => (cats.length ? cats : prev.length ? prev : FALLBACK_CATEGORIES));
       setVendors(vendorList);
       setFeatured(products);
     } catch (err) {
@@ -142,12 +145,19 @@ export default function HomeScreen() {
     setTimeout(() => searchInputRef.current?.focus(), 80);
   };
 
-  const closeSearch = () => {
+  const closeSearch = useCallback(() => {
+    searchInputRef.current?.blur();
+    Keyboard.dismiss();
     setSearchOpen(false);
     setSearchQuery('');
     setSearchResults([]);
     setSearchError(null);
     setSearchLoading(false);
+  }, []);
+
+  const dismissSearchOnScroll = () => {
+    if (searchOpen) closeSearch();
+    else Keyboard.dismiss();
   };
 
   // Debounced meal typeahead — only meals whose name matches what the user typed
@@ -218,132 +228,12 @@ export default function HomeScreen() {
         }
         contentContainerStyle={{ paddingBottom: listBottomPad }}
         showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={dismissSearchOnScroll}
         ListHeaderComponent={
           <>
-            {/* Location + search — static, no animation */}
-            <View style={styles.topBar}>
-              <TouchableOpacity
-                style={styles.locationPill}
-                onPress={() => setAddressModalOpen(true)}
-                activeOpacity={0.85}
-              >
-                <View style={styles.locationIconShell}>
-                  <Ionicons name="location" size={14} color={FudsColors.primary} />
-                </View>
-                <Text style={styles.locationText} numberOfLines={1}>
-                  {user?.address?.trim() || 'Set delivery address'}
-                </Text>
-                <Ionicons name="chevron-down" size={14} color={FudsColors.mutedForeground} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.searchBtn, searchOpen && styles.searchBtnActive]}
-                activeOpacity={0.85}
-                onPress={() => (searchOpen ? closeSearch() : openSearch())}
-              >
-                <Ionicons
-                  name={searchOpen ? 'close' : 'search'}
-                  size={18}
-                  color={FudsColors.primaryForeground}
-                />
-                <Text style={styles.searchBtnLabel}>{searchOpen ? 'Close' : 'Search'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Meal search + typeahead dropdown */}
-            {searchOpen ? (
-              <View style={styles.searchPanel}>
-                <View style={styles.searchInputRow}>
-                  <Ionicons name="search" size={18} color={FudsColors.mutedForeground} />
-                  <TextInput
-                    ref={searchInputRef}
-                    style={styles.searchInput}
-                    placeholder="Search meals, dishes…"
-                    placeholderTextColor={FudsColors.mutedForeground}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    autoCorrect={false}
-                    autoCapitalize="none"
-                    returnKeyType="search"
-                    clearButtonMode="while-editing"
-                  />
-                  {searchLoading ? (
-                    <ActivityIndicator size="small" color={FudsColors.primary} />
-                  ) : searchQuery.length > 0 ? (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setSearchQuery('');
-                        setSearchResults([]);
-                      }}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="close-circle" size={18} color={FudsColors.mutedForeground} />
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-
-                {searchError ? (
-                  <Text style={styles.searchError}>{searchError}</Text>
-                ) : null}
-
-                {searchQuery.trim().length >= 1 &&
-                !searchLoading &&
-                searchResults.length === 0 &&
-                !searchError ? (
-                  <View style={styles.unavailableBox}>
-                    <Text style={styles.unavailableText}>Unavailable</Text>
-                    <Text style={styles.unavailableSub}>
-                      No meal named “{searchQuery.trim()}” right now
-                    </Text>
-                  </View>
-                ) : null}
-
-                {searchResults.length > 0 ? (
-                  <View style={styles.searchDropdown}>
-                    {searchResults.map((item, idx) => (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={[
-                          styles.searchRow,
-                          idx === searchResults.length - 1 && styles.searchRowLast,
-                        ]}
-                        activeOpacity={0.85}
-                        onPress={() => pickMeal(item)}
-                      >
-                        <View style={styles.searchThumbShell}>
-                          {item.image_url ? (
-                            <Image source={{ uri: item.image_url }} style={styles.searchThumb} />
-                          ) : (
-                            <View style={[styles.searchThumb, styles.searchThumbPlaceholder]}>
-                              <Ionicons
-                                name="restaurant-outline"
-                                size={16}
-                                color={FudsColors.mutedForeground}
-                              />
-                            </View>
-                          )}
-                        </View>
-                        <View style={styles.searchRowBody}>
-                          <Text style={styles.searchMealName} numberOfLines={1}>
-                            {item.name}
-                          </Text>
-                          <Text style={styles.searchVendor} numberOfLines={1}>
-                            {item.vendor_name || 'Vendor'}
-                            {item.category
-                              ? ` · ${formatCategory(item.category)}`
-                              : ''}
-                          </Text>
-                        </View>
-                        <Text style={styles.searchPrice}>
-                          ₦{Number(item.price).toLocaleString()}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-
-            {/* Category hub — animations ONLY here */}
+            {/* Category hub — extra top pad so floating location/search sit on the yellow card */}
             <View style={styles.categoryHub}>
               <View style={styles.hubBlobA} />
               <View style={styles.hubBlobB} />
@@ -355,9 +245,9 @@ export default function HomeScreen() {
                   const selected = activeGroup === cat.key;
                   const radius = idx % 2 === 0 ? 28 : 36;
                   return (
-                    <FadeInView key={cat.key} delay={80 + idx * 60} style={styles.categoryItem}>
+                    <View key={cat.key} style={styles.categoryItem}>
                       <AnimatedPressable
-                        scaleTo={0.9}
+                        scaleTo={0.92}
                         onPress={() => selectGroup(cat.key)}
                         style={styles.categoryPress}
                       >
@@ -367,11 +257,8 @@ export default function HomeScreen() {
                             {
                               backgroundColor: visual.bg,
                               borderRadius: radius,
-                            },
-                            selected && {
-                              borderColor: visual.tint,
-                              borderWidth: 2.5,
-                              transform: [{ rotate: '-3deg' }, { scale: 1.05 }],
+                              borderColor: selected ? visual.tint : 'transparent',
+                              borderWidth: selected ? 2.5 : 0,
                             },
                           ]}
                         >
@@ -404,25 +291,32 @@ export default function HomeScreen() {
                           </View>
                         ) : null}
                       </AnimatedPressable>
-                    </FadeInView>
+                    </View>
                   );
                 })}
               </View>
             </View>
 
             {/* Promo */}
-            <View style={styles.promoBanner}>
+            <TouchableOpacity
+              style={styles.promoBanner}
+              activeOpacity={0.9}
+              onPress={() => {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                router.push('/(app)/marketplace' as any);
+              }}
+            >
               <View style={styles.promoWave} />
               <View style={styles.promoCopy}>
-                <Text style={styles.promoEyebrow}>FUDS DEALS</Text>
+                <Text style={styles.promoEyebrow}>FUDS MARKETPLACE</Text>
                 <Text style={styles.promoTitle}>Pay less, eat better</Text>
-                <Text style={styles.promoSub}>Free delivery on first order this week</Text>
+                <Text style={styles.promoSub}>Fresh groceries and essentials delivered fast</Text>
                 <View style={styles.promoCta}>
-                  <Text style={styles.promoCtaText}>Order now</Text>
+                  <Text style={styles.promoCtaText}>FUDS Marketplace</Text>
                 </View>
               </View>
               <Image source={{ uri: FudsImages.jollof }} style={styles.promoImage} />
-            </View>
+            </TouchableOpacity>
 
             {/* High demand */}
             <TouchableOpacity
@@ -439,7 +333,7 @@ export default function HomeScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.demandTitle}>High demand right now</Text>
                 <Text style={styles.demandBody}>
-                  Schedule with 111 for priority slots from 08:00 onwards.
+                  Schedule with 111 — breakfast 8–11am, lunch 1–4pm, dinner 5–7pm.
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
@@ -593,12 +487,149 @@ export default function HomeScreen() {
           )
         }
       />
+
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.stickyHeader,
+          {
+            top: insets.top,
+            left: insets.left,
+            right: insets.right,
+          },
+        ]}
+      >
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            style={styles.locationPill}
+            onPress={() => setAddressModalOpen(true)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.locationIconShell}>
+              <Ionicons name="location" size={14} color={FudsColors.primary} />
+            </View>
+            <Text style={styles.locationText} numberOfLines={1}>
+              {user?.address?.trim() || 'Set delivery address'}
+            </Text>
+            <Ionicons name="chevron-down" size={14} color={FudsColors.mutedForeground} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.searchBtn, searchOpen && styles.searchBtnActive]}
+            activeOpacity={0.85}
+            onPress={() => (searchOpen ? closeSearch() : openSearch())}
+          >
+            <Ionicons
+              name={searchOpen ? 'close' : 'search'}
+              size={18}
+              color={FudsColors.primaryForeground}
+            />
+            <Text style={styles.searchBtnLabel}>{searchOpen ? 'Close' : 'Search'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {searchOpen ? (
+          <View style={styles.searchPanel}>
+            <View style={styles.searchInputRow}>
+              <Ionicons name="search" size={18} color={FudsColors.mutedForeground} />
+              <TextInput
+                ref={searchInputRef}
+                style={styles.searchInput}
+                placeholder="Search meals, dishes…"
+                placeholderTextColor={FudsColors.mutedForeground}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                clearButtonMode="while-editing"
+              />
+              {searchLoading ? (
+                <ActivityIndicator size="small" color={FudsColors.primary} />
+              ) : searchQuery.length > 0 ? (
+                <TouchableOpacity
+                  onPress={() => {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                  }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close-circle" size={18} color={FudsColors.mutedForeground} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {searchError ? (
+              <Text style={styles.searchError}>{searchError}</Text>
+            ) : null}
+
+            {searchQuery.trim().length >= 1 &&
+            !searchLoading &&
+            searchResults.length === 0 &&
+            !searchError ? (
+              <View style={styles.unavailableBox}>
+                <Text style={styles.unavailableText}>Unavailable</Text>
+                <Text style={styles.unavailableSub}>
+                  No meal named “{searchQuery.trim()}” right now
+                </Text>
+              </View>
+            ) : null}
+
+            {searchResults.length > 0 ? (
+              <View style={styles.searchDropdown}>
+                {searchResults.map((item, idx) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.searchRow,
+                      idx === searchResults.length - 1 && styles.searchRowLast,
+                    ]}
+                    activeOpacity={0.85}
+                    onPress={() => pickMeal(item)}
+                  >
+                    <View style={styles.searchThumbShell}>
+                      {item.image_url ? (
+                        <Image source={{ uri: item.image_url }} style={styles.searchThumb} />
+                      ) : (
+                        <View style={[styles.searchThumb, styles.searchThumbPlaceholder]}>
+                          <Ionicons
+                            name="restaurant-outline"
+                            size={16}
+                            color={FudsColors.mutedForeground}
+                          />
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.searchRowBody}>
+                      <Text style={styles.searchMealName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.searchVendor} numberOfLines={1}>
+                        {item.vendor_name || 'Vendor'}
+                        {item.category ? ` · ${formatCategory(item.category)}` : ''}
+                      </Text>
+                    </View>
+                    <Text style={styles.searchPrice}>₦{Number(item.price).toLocaleString()}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: FudsColors.background },
+  stickyHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'transparent',
+    zIndex: 40,
+  },
 
   topBar: {
     flexDirection: 'row',
@@ -656,6 +687,7 @@ const styles = StyleSheet.create({
     marginHorizontal: Spacing.three,
     marginBottom: Spacing.two,
     zIndex: 20,
+    backgroundColor: 'transparent',
   },
   searchInputRow: {
     flexDirection: 'row',
@@ -762,7 +794,8 @@ const styles = StyleSheet.create({
     marginTop: Spacing.two,
     backgroundColor: '#F5C518',
     borderRadius: 28,
-    paddingVertical: Spacing.four,
+    paddingTop: 62,
+    paddingBottom: Spacing.four,
     paddingHorizontal: Spacing.two,
     overflow: 'hidden',
     ...FudsShadow.md,

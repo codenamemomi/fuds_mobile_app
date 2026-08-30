@@ -21,7 +21,7 @@ import { AddressField } from '@/components/ui/address-field';
 import { FudsButton } from '@/components/ui/fuds-button';
 import { FudsInput } from '@/components/ui/fuds-input';
 import { KeyboardScreen } from '@/components/ui/keyboard-screen';
-import { FudsColors, FudsRadius, FudsShadow, Spacing } from '@/constants/theme';
+import { BottomTabInset, FudsColors, FudsRadius, FudsShadow, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
 
 const DIET_GOALS = [
@@ -396,7 +396,7 @@ function ProfileRow({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: FudsColors.background },
-  content: { padding: Spacing.three, paddingBottom: Spacing.six },
+  content: { padding: Spacing.three, paddingBottom: BottomTabInset + Spacing.four },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',

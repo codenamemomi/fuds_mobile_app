@@ -149,7 +149,8 @@ export const Spacing = {
  * don't sit under the tab icons. Includes typical bar height only —
  * combine with useSafeAreaInsets().bottom when needed.
  */
-export const BottomTabInset = Platform.select({ ios: 88, android: 72 }) ?? 72;
+/** Space for the floating circular tab pill + gap above the home indicator. */
+export const BottomTabInset = Platform.select({ ios: 104, android: 96 }) ?? 96;
 export const MaxContentWidth = 800;
 
 // ─── FUDS-specific spacing ────────────────────────────────────────────────────

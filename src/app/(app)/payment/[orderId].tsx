@@ -87,8 +87,12 @@ export default function PaymentScreen() {
       : '—';
 
   const goToOrders = useCallback(() => {
+    // Land on My Orders (history), not the Cart segment.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    router.replace('/(app)/(tabs)/orders' as any);
+    router.replace({
+      pathname: '/(app)/(tabs)/orders' as any,
+      params: { tab: 'history' },
+    });
   }, []);
 
   const verifyReference = useCallback(
