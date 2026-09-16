@@ -1,100 +1,96 @@
 /**
  * FUDS backend URL configuration
- * ─────────────────────────────────────────────────────────────────────────────
- * Single place to point the mobile app at your FastAPI server.
  *
- * Resolution order (first match wins):
- *   1. EXPLICIT_BACKEND_URL  — set this for a fixed host (LAN IP, staging, prod)
- *   2. Expo dev host IP      — in __DEV__, reuses the Metro machine IP on :8000
- *   3. app.json → expo.extra.apiBaseUrl
- *   4. Platform fallbacks    — Android emulator 10.0.2.2, else localhost
+ * Dev (`expo start` / debug APK)  → local FastAPI
+ * Prod (release / EAS preview)    → HTTPS reverse proxy
  *
- * Examples:
- *   EXPLICIT_BACKEND_URL = 'http://192.168.1.42:8000'   // phone on same Wi‑Fi
- *   EXPLICIT_BACKEND_URL = 'https://api.fuds.app'       // production
- *   EXPLICIT_BACKEND_URL = null                        // auto (dev-friendly)
- *
- * Backend routes live under API_PREFIX (default /api/v1).
+ * For a physical phone on the same Wi-Fi as your laptop, set DEV_BACKEND_URL
+ * to your machine LAN IP, e.g. 'http://192.168.1.42:8000'.
+ * Leave it null to auto-use the Expo Metro host IP on port 8000.
  */
 
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-// ─── Edit this when you need a fixed backend ─────────────────────────────────
+/** Production — alwaysdata HTTPS reverse proxy. */
+export const PROD_BACKEND_URL = 'https://omomi.alwaysdata.net';
+export const LIVE_BACKEND_URL = PROD_BACKEND_URL;
+export const PHYSICAL_DEVICE_BACKEND_URL = PROD_BACKEND_URL;
 
 /**
- * Set to a full origin (no trailing slash), e.g. `http://192.168.0.15:8000`.
- * Leave `null` to use Expo host / app.json / defaults.
+ * Local FastAPI for development only.
+ * Examples:
+ *   'http://192.168.1.42:8000'   physical phone on the same Wi-Fi
+ *   'http://10.0.2.2:8000'       Android emulator
+ *   'http://localhost:8000'      iOS simulator / web
+ *   null                         auto-detect (Expo host / emulator loopback)
  */
-export const EXPLICIT_BACKEND_URL: string | null = "http://192.168.1.102:8000";
+export const DEV_BACKEND_URL: string | null = null;
 
-/** Port used when deriving the URL from the Expo dev host. */
+/** @deprecated Prefer DEV_BACKEND_URL / PROD_BACKEND_URL. */
+export const EXPLICIT_BACKEND_URL: string | null = DEV_BACKEND_URL;
+
 export const BACKEND_PORT = 8000;
-
-/** API path prefix on the FastAPI app (must match backend router mount). */
 export const API_PREFIX = '/api/v1';
-
-/** Fallback for Android emulator → host machine loopback. */
 export const ANDROID_EMULATOR_HOST = 'http://10.0.2.2:8000';
-
-/** Fallback for iOS simulator / web. */
 export const LOCALHOST_HOST = 'http://localhost:8000';
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
+function fromEnv(): string | null {
+  const envUrl =
+    typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_BASE_URL
+      ? process.env.EXPO_PUBLIC_API_BASE_URL.trim()
+      : '';
+  return envUrl ? stripTrailingSlash(envUrl) : null;
+}
+
+function fromAppJson(key: 'apiBaseUrl' | 'devApiBaseUrl'): string | null {
+  const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
+  const value = typeof extra?.[key] === 'string' ? extra[key].trim() : '';
+  return value ? stripTrailingSlash(value) : null;
+}
+
 function fromExpoDevHost(): string | null {
-  if (!__DEV__) return null;
-  const hostUri = Constants.expoConfig?.hostUri; // e.g. "192.168.1.15:8081"
+  const hostUri = Constants.expoConfig?.hostUri;
   if (!hostUri) return null;
   const hostIp = hostUri.split(':')[0];
   if (!hostIp || hostIp === 'localhost' || hostIp === '127.0.0.1') return null;
   return `http://${hostIp}:${BACKEND_PORT}`;
 }
 
-function fromAppJsonExtra(): string | null {
-  const configured = Constants.expoConfig?.extra?.apiBaseUrl as string | undefined;
-  if (!configured?.trim()) return null;
-  let url = stripTrailingSlash(configured.trim());
-  // app.json often stores the Android emulator address; rewrite for iOS/web
-  if (Platform.OS !== 'android' && url.includes('10.0.2.2')) {
-    url = url.replace('10.0.2.2', 'localhost');
-  }
-  return url;
+function devDefault(): string {
+  if (DEV_BACKEND_URL?.trim()) return stripTrailingSlash(DEV_BACKEND_URL.trim());
+  const fromJson = fromAppJson('devApiBaseUrl');
+  if (fromJson) return fromJson;
+  return fromExpoDevHost() ?? (Platform.OS === 'android' ? ANDROID_EMULATOR_HOST : LOCALHOST_HOST);
 }
 
-function platformDefault(): string {
-  return Platform.OS === 'android' ? ANDROID_EMULATOR_HOST : LOCALHOST_HOST;
+function prodDefault(): string {
+  return fromAppJson('apiBaseUrl') ?? PROD_BACKEND_URL;
 }
 
 /**
- * Resolve the backend origin (scheme + host + port, no /api path).
- * Safe to call once at module load or anytime.
+ * Dev builds use local FastAPI. Release builds use the HTTPS proxy.
+ * EXPO_PUBLIC_API_BASE_URL always wins (EAS profiles).
  */
 export function getBackendUrl(): string {
-  if (EXPLICIT_BACKEND_URL?.trim()) {
-    return stripTrailingSlash(EXPLICIT_BACKEND_URL.trim());
-  }
-  return fromExpoDevHost() ?? fromAppJsonExtra() ?? platformDefault();
+  const fromPublicEnv = fromEnv();
+  if (fromPublicEnv) return fromPublicEnv;
+  return __DEV__ ? devDefault() : prodDefault();
 }
 
-/** Resolved once when the app module graph loads. */
 export const BACKEND_URL: string = getBackendUrl();
 
-/**
- * Build a full API URL for a path under /api/v1.
- * @example apiUrl('/auth/login') → 'http://192.168.1.15:8000/api/v1/auth/login'
- * @example apiUrl('orders')     → '…/api/v1/orders'
- */
 export function apiUrl(path: string): string {
   const normalized = path.startsWith('/') ? path : `/${path}`;
   return `${BACKEND_URL}${API_PREFIX}${normalized}`;
 }
 
 if (__DEV__) {
+  console.log('[FUDS config] mode:        DEV');
   console.log('[FUDS config] BACKEND_URL:', BACKEND_URL);
   console.log('[FUDS config] API base:   ', `${BACKEND_URL}${API_PREFIX}`);
 }

@@ -98,12 +98,10 @@ async function request<T>(
       headers,
     });
   } catch (err) {
-    // TypeError: fetch failed / Network request failed — host unreachable
     const reason = err instanceof Error ? err.message : String(err);
     throw new Error(
       `Cannot reach API at ${url} (${reason}). ` +
-        `Is the backend running? On a physical phone set EXPLICIT_BACKEND_URL ` +
-        `in src/config/backend.ts to your PC LAN IP (e.g. http://192.168.x.x:8000).`
+        `The live API is https://omomi.alwaysdata.net. Uninstall the old app and install a newly built APK.`
     );
   }
 
