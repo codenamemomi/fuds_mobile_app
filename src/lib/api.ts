@@ -227,6 +227,7 @@ export interface Product {
   name: string;
   price: number;
   category: ProductCategory | null;
+  aisle?: string | null;
   image_url: string | null;
 }
 
@@ -238,6 +239,15 @@ export interface ProductWithVendor extends Product {
   vendor_name: string | null;
   vendor_category: string | null;
   vendor_address: string | null;
+}
+
+export interface MarketplaceProduct {
+  id: number;
+  name: string;
+  price: number;
+  category: string | null;
+  aisle: string | null;
+  image_url: string | null;
 }
 
 /** Derive open/closed from status + opening/closing hours (backend has no is_open). */
@@ -332,7 +342,47 @@ export interface GroceryAisleRead {
 
 export interface GroceryCatalogRead {
   aisles: GroceryAisleRead[];
-  products: ProductWithVendor[];
+  products: MarketplaceProduct[];
+}
+
+export interface GroceryItemCreate {
+  product_id: number;
+  quantity?: number;
+}
+
+export interface GrocerySubscriptionRead {
+  id: number;
+  user_id: number;
+  frequency: string;
+  next_delivery: string | null;
+  status: string;
+  order_id: number | null;
+  created_at: string;
+  items: Array<{
+    product_id: number;
+    quantity: number;
+    name: string;
+    price: number;
+    subtotal: number;
+    aisle: string | null;
+    image_url: string | null;
+    vendor_id: number | null;
+    vendor_name: string | null;
+    marketplace_product_id: number | null;
+  }>;
+  item_count: number;
+  total: number;
+  payment_status: string | null;
+  added_items: Array<{ product_id: number; name: string; quantity: number; amount: number }>;
+  removed_items: Array<{ product_id: number; name: string; quantity: number; amount: number }>;
+  change_total: number;
+}
+
+export interface GrocerySubscriptionUpdate {
+  items?: GroceryItemCreate[];
+  frequency?: string;
+  next_delivery?: string;
+  status?: string;
 }
 
 export const marketplaceApi = {
@@ -340,25 +390,61 @@ export const marketplaceApi = {
 
   getCatalog: (params?: { aisle?: string; search?: string }) =>
     request<GroceryCatalogRead>(`/marketplace/catalog${toQuery(params as Record<string, string | number | undefined | null>)}`),
+
+  listEssentials: (search?: string) =>
+    request<MarketplaceProduct[]>(`/marketplace/essentials${toQuery({ search })}`),
+
+  createShoppingList: (items: GroceryItemCreate[], frequency: string = 'weekly') =>
+    request<GrocerySubscriptionRead>('/marketplace/subscriptions', {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ items, frequency }),
+    }),
+
+  listShoppingLists: () =>
+    request<GrocerySubscriptionRead[]>('/marketplace/subscriptions', { auth: true }),
+
+  updateShoppingList: (subscriptionId: number, payload: GrocerySubscriptionUpdate) =>
+    request<GrocerySubscriptionRead>(`/marketplace/subscriptions/${subscriptionId}`, {
+      method: 'PATCH',
+      auth: true,
+      body: JSON.stringify(payload),
+    }),
+
+  cancelShoppingList: (subscriptionId: number) =>
+    request<{ message: string }>(`/marketplace/subscriptions/${subscriptionId}`, {
+      method: 'DELETE',
+      auth: true,
+    }),
+
+  checkoutShoppingList: (subscriptionId: number, cycles: number = 1) =>
+    request<OrderRead>(`/marketplace/subscriptions/${subscriptionId}/checkout`, {
+      method: 'POST',
+      auth: true,
+      body: JSON.stringify({ cycles }),
+    }),
 };
 
 // ─── Cart types (match CartItemCreate / CartItemUpdate / CartItemRead / CartRead) ──
 
 export interface CartItemCreate {
-  product_id: number;
-  vendor_id: number;
+  product_id?: number;
+  marketplace_product_id?: number;
+  vendor_id?: number;
   quantity?: number; // defaults to 1 server-side
 }
 
 export interface CartItemUpdate {
-  product_id: number;
+  product_id?: number;
+  marketplace_product_id?: number;
   quantity: number; // 0 removes the item server-side (ge=0)
 }
 
 /** Flat shape returned by GET /cart — not nested under product. */
 export interface CartItemRead {
-  product_id: number;
-  vendor_id: number;
+  product_id: number | null;
+  marketplace_product_id: number | null;
+  vendor_id: number | null;
   name: string;
   price: number;
   quantity: number;
@@ -389,14 +475,18 @@ export const cartApi = {
 
   removeItem: (productId: number) =>
     request<CartRead>(`/cart/item/${productId}`, { method: 'DELETE', auth: true }),
+
+  removeMarketplaceItem: (productId: number) =>
+    request<CartRead>(`/cart/marketplace-item/${productId}`, { method: 'DELETE', auth: true }),
 };
 
 // ─── Order types (match OrderRead / OrderItemRead / CheckoutRequest) ──────────
 
 export interface OrderItemRead {
   id: number;
-  product_id: number;
-  vendor_id: number;
+  product_id: number | null;
+  marketplace_product_id: number | null;
+  vendor_id: number | null;
   quantity: number;
   price: number;
   product_name: string | null;

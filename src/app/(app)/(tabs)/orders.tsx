@@ -3,20 +3,6 @@
  * Replaces the old Cart-only tab.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Image,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
-import { router, useLocalSearchParams } from 'expo-router';
 import { FudsButton } from '@/components/ui/fuds-button';
 import {
   BottomTabInset,
@@ -27,13 +13,29 @@ import {
 } from '@/constants/theme';
 import {
   cartApi,
+  marketplaceApi,
   ordersApi,
   type CartItemRead,
   type CartRead,
+  type GrocerySubscriptionRead,
   type OrderRead,
 } from '@/lib/api';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from "expo-router/react-navigation";
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type Segment = 'cart' | 'history';
+type Segment = 'cart' | 'subscriptions' | 'history';
 
 const EMPTY_CART: CartRead = { user_id: 0, items: [], total: 0, item_count: 0 };
 
@@ -54,6 +56,7 @@ function statusColor(status: string): { bg: string; text: string } {
 function readTabParam(tab: string | string[] | undefined): Segment | null {
   const value = Array.isArray(tab) ? tab[0] : tab;
   if (value === 'history' || value === 'orders') return 'history';
+  if (value === 'subscriptions') return 'subscriptions';
   if (value === 'cart') return 'cart';
   return null;
 }
@@ -68,11 +71,14 @@ export default function OrdersScreen() {
   const [segment, setSegment] = useState<Segment>(requestedTab ?? 'cart');
   const [cart, setCart] = useState<CartRead | null>(null);
   const [orders, setOrders] = useState<OrderRead[]>([]);
+  const [subscriptions, setSubscriptions] = useState<GrocerySubscriptionRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
+  const [subscriptionCycles, setSubscriptionCycles] = useState(1);
 
   const loadCart = useCallback(async () => {
     try {
@@ -97,6 +103,18 @@ export default function OrdersScreen() {
     }
   }, []);
 
+  const loadSubscriptions = useCallback(async () => {
+    try {
+      setError(null);
+      setSubscriptionsLoading(true);
+      setSubscriptions(await marketplaceApi.listShoppingLists());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load grocery subscriptions');
+    } finally {
+      setSubscriptionsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -117,7 +135,8 @@ export default function OrdersScreen() {
       if (next === 'history' || segment === 'history') {
         loadOrders();
       }
-    }, [loadCart, loadOrders, requestedTab, segment])
+      if (next === 'subscriptions' || segment === 'subscriptions') loadSubscriptions();
+    }, [loadCart, loadOrders, loadSubscriptions, requestedTab, segment])
   );
 
   useEffect(() => {
@@ -126,15 +145,27 @@ export default function OrdersScreen() {
     }
   }, [segment, loadOrders]);
 
+  useEffect(() => {
+    if (segment === 'subscriptions') loadSubscriptions();
+  }, [segment, loadSubscriptions]);
+
   const changeQuantity = async (item: CartItemRead, delta: number) => {
     const nextQty = item.quantity + delta;
-    setUpdatingId(item.product_id);
+    const itemId = item.product_id ?? item.marketplace_product_id ?? 0;
+    setUpdatingId(itemId);
     try {
       if (nextQty <= 0) {
-        setCart(await cartApi.removeItem(item.product_id));
+        setCart(item.marketplace_product_id != null
+          ? await cartApi.removeMarketplaceItem(item.marketplace_product_id)
+          : await cartApi.removeItem(item.product_id!));
       } else {
         setCart(
-          await cartApi.updateItem({ product_id: item.product_id, quantity: nextQty })
+          await cartApi.updateItem({
+            ...(item.marketplace_product_id != null
+              ? { marketplace_product_id: item.marketplace_product_id }
+              : { product_id: item.product_id! }),
+            quantity: nextQty,
+          })
         );
       }
     } catch (err) {
@@ -223,6 +254,21 @@ export default function OrdersScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.segmentBtn, segment === 'subscriptions' && styles.segmentBtnActive]}
+            onPress={() => setSegment('subscriptions')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="repeat" size={15} color={segment === 'subscriptions' ? FudsColors.primaryForeground : FudsColors.mutedForeground} />
+            <Text
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+              style={[styles.segmentText, segment === 'subscriptions' && styles.segmentTextActive]}
+            >
+              Grocery Subscriptions
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.segmentBtn, segment === 'history' && styles.segmentBtnActive]}
             onPress={() => setSegment('history')}
             activeOpacity={0.85}
@@ -262,7 +308,7 @@ export default function OrdersScreen() {
           )}
           <FlatList
             data={items}
-            keyExtractor={(item) => String(item.product_id)}
+            keyExtractor={(item) => String(item.product_id ?? `marketplace-${item.marketplace_product_id}`)}
             contentContainerStyle={{
               paddingHorizontal: Spacing.three,
               paddingBottom: footerHeight + tabClearance + Spacing.three,
@@ -299,7 +345,7 @@ export default function OrdersScreen() {
                   <TouchableOpacity
                     style={styles.qtyButton}
                     onPress={() => changeQuantity(item, -1)}
-                    disabled={updatingId === item.product_id}
+                    disabled={updatingId === (item.product_id ?? item.marketplace_product_id)}
                   >
                     <Ionicons
                       name={item.quantity === 1 ? 'trash-outline' : 'remove'}
@@ -321,7 +367,7 @@ export default function OrdersScreen() {
                   <TouchableOpacity
                     style={[styles.qtyButton, styles.qtyButtonPlus]}
                     onPress={() => changeQuantity(item, 1)}
-                    disabled={updatingId === item.product_id}
+                    disabled={updatingId === (item.product_id ?? item.marketplace_product_id)}
                   >
                     <Ionicons name="add" size={16} color={FudsColors.primaryForeground} />
                   </TouchableOpacity>
@@ -376,6 +422,75 @@ export default function OrdersScreen() {
             </View>
           )}
         </>
+      ) : segment === 'subscriptions' ? (
+        <FlatList
+          data={subscriptions.slice(0, 1)}
+          keyExtractor={(item) => String(item.id)}
+          style={styles.subscriptionList}
+          contentContainerStyle={styles.subscriptionListContent}
+          scrollEnabled={false}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => (
+            <View style={styles.subscriptionCard}>
+              <View style={styles.orderTop}>
+                <View>
+                  <Text style={styles.orderId}>Your grocery subscription</Text>
+                  <Text style={styles.orderDate}>{item.item_count} items · {item.frequency}</Text>
+                </View>
+                  <View style={[styles.badge, { backgroundColor: item.payment_status === 'paid' ? FudsColors.openBg : '#FEF3C7' }]}><Text style={[styles.badgeText, { color: item.payment_status === 'paid' ? FudsColors.openText : '#B45309' }]}>{item.payment_status === 'paid' ? 'paid' : item.status}</Text></View>
+              </View>
+              <Text style={styles.subscriptionItems}>{item.items.slice(0, 3).map((entry) => entry.name).join(', ')}</Text>
+              <View style={styles.cyclePicker}>
+                <View style={styles.cycleCopy}>
+                  <Text style={styles.cycleTitle}>Pay for cycles</Text>
+                  <Text style={styles.cycleHint}>Choose 1 to 5 {item.frequency} deliveries</Text>
+                </View>
+                <TouchableOpacity style={styles.cycleButton} onPress={() => setSubscriptionCycles((count) => Math.max(1, count - 1))}>
+                  <Ionicons name="remove" size={16} color={FudsColors.foreground} />
+                </TouchableOpacity>
+                <Text style={styles.cycleValue}>{subscriptionCycles}</Text>
+                <TouchableOpacity style={styles.cycleButtonActive} onPress={() => setSubscriptionCycles((count) => Math.min(5, count + 1))}>
+                  <Ionicons name="add" size={16} color="#fff" />
+                </TouchableOpacity>
+              </View>
+              {item.added_items.length > 0 ? (
+                <Text style={styles.subscriptionChangeAdded}>
+                  Added: {item.added_items.map((entry) => `${entry.name} ×${entry.quantity}`).join(', ')} (+₦{item.added_items.reduce((sum, entry) => sum + entry.amount, 0).toLocaleString()})
+                </Text>
+              ) : null}
+              {item.removed_items.length > 0 ? (
+                <Text style={styles.subscriptionChangeRemoved}>
+                  Removed: {item.removed_items.map((entry) => `${entry.name} ×${entry.quantity}`).join(', ')} (-₦{item.removed_items.reduce((sum, entry) => sum + entry.amount, 0).toLocaleString()})
+                </Text>
+              ) : null}
+              {item.change_total !== 0 ? (
+                <Text style={styles.subscriptionChangeTotal}>
+                  List change: {item.change_total > 0 ? '+' : '-'}₦{Math.abs(item.change_total).toLocaleString()}
+                </Text>
+              ) : null}
+              <View style={styles.subscriptionActions}>
+                <TouchableOpacity style={styles.subscriptionCancel} onPress={async () => { await marketplaceApi.updateShoppingList(item.id, { status: item.status === 'active' ? 'paused' : 'active' }); loadSubscriptions(); }}>
+                  <Text style={styles.subscriptionCancelText}>{item.status === 'active' ? 'Deactivate sub' : 'Activate sub'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.subscriptionCheckout, item.payment_status === 'paid' && styles.subscriptionCheckoutDisabled]}
+                  disabled={item.payment_status === 'paid'}
+                  onPress={async () => {
+                    try {
+                      const order = await marketplaceApi.checkoutShoppingList(item.id, subscriptionCycles);
+                      openPayment(order.id, Number(order.total_price));
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : 'Could not start grocery payment');
+                    }
+                  }}
+                >
+                  <Text style={styles.subscriptionCheckoutText}>{item.payment_status === 'paid' ? 'Paid · Await delivery' : 'Pay groceries'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          ListEmptyComponent={subscriptionsLoading ? <ActivityIndicator color={FudsColors.primary} style={{ marginTop: 48 }} /> : <View style={styles.emptyState}><Text style={styles.emptyTitle}>No grocery subscriptions</Text><Text style={styles.emptySubtitle}>Create one from the Marketplace.</Text></View>}
+        />
       ) : (
         <FlatList
           data={orders}
@@ -508,18 +623,23 @@ const styles = StyleSheet.create({
   },
   segmentBtn: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
+    gap: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 9,
     borderRadius: FudsRadius.full,
   },
   segmentBtnActive: {
     backgroundColor: FudsColors.primary,
   },
   segmentText: {
-    fontSize: 13,
+    flexShrink: 1,
+    textAlign: 'center',
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '800',
     color: FudsColors.mutedForeground,
   },
@@ -668,6 +788,63 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 22,
     borderBottomLeftRadius: 22,
   },
+  subscriptionCard: {
+    backgroundColor: FudsColors.card,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: FudsColors.border,
+    padding: Spacing.four,
+    marginBottom: Spacing.three,
+    width: '100%',
+    ...FudsShadow.sm,
+  },
+  subscriptionList: { flex: 1 },
+  subscriptionListContent: {
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.four,
+    flexGrow: 1,
+  },
+  subscriptionItems: {
+    marginTop: Spacing.two,
+    color: FudsColors.mutedForeground,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cyclePicker: { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingVertical: 9, paddingHorizontal: 10, borderRadius: 12, backgroundColor: FudsColors.background, borderWidth: 1, borderColor: FudsColors.border },
+  cycleCopy: { flex: 1 },
+  cycleTitle: { color: FudsColors.foreground, fontSize: 12, fontWeight: '900' },
+  cycleHint: { color: FudsColors.mutedForeground, fontSize: 10, fontWeight: '600', marginTop: 2 },
+  cycleButton: { width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: FudsColors.border, alignItems: 'center', justifyContent: 'center' },
+  cycleButtonActive: { width: 28, height: 28, borderRadius: 8, backgroundColor: FudsColors.primary, alignItems: 'center', justifyContent: 'center' },
+  cycleValue: { minWidth: 24, textAlign: 'center', color: FudsColors.foreground, fontSize: 14, fontWeight: '900' },
+  subscriptionChangeAdded: { marginTop: 6, color: FudsColors.openText, fontSize: 11, fontWeight: '700' },
+  subscriptionChangeRemoved: { marginTop: 4, color: FudsColors.destructive, fontSize: 11, fontWeight: '700' },
+  subscriptionChangeTotal: { marginTop: 6, color: FudsColors.foreground, fontSize: 12, fontWeight: '900' },
+  subscriptionActions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginTop: Spacing.three,
+  },
+  subscriptionCancel: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: FudsColors.border,
+    borderRadius: FudsRadius.md,
+    paddingVertical: 10,
+  },
+  subscriptionCancelText: { color: FudsColors.destructive, fontWeight: '800', fontSize: 12 },
+  subscriptionCheckout: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: FudsRadius.md,
+    paddingVertical: 10,
+    backgroundColor: FudsColors.primary,
+  },
+  subscriptionCheckoutText: { color: FudsColors.primaryForeground, fontWeight: '800', fontSize: 12 },
+  subscriptionCheckoutDisabled: { backgroundColor: FudsColors.muted },
   orderTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',

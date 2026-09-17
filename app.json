@@ -17,7 +17,6 @@
       "bundleIdentifier": "com.codenamemomi.fuds-mobile-app"
     },
     "android": {
-      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -57,7 +56,11 @@
           "locationWhenInUsePermission": "FUDS uses your location to suggest a delivery address. You can always edit it before saving — GPS is often slightly off for Nigerian estates and gates.",
           "isAndroidForegroundServiceEnabled": false
         }
-      ]
+      ],
+      "expo-font",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -5,14 +5,14 @@
  */
 
 import { router } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
-  Alert,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -79,7 +79,10 @@ export default function RegisterScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardScreen contentContainerStyle={styles.scroll}>
+      <KeyboardScreen
+        contentContainerStyle={styles.scroll}
+        scrollOnKeyboardShow={false}
+      >
           {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity

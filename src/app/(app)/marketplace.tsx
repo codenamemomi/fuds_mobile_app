@@ -3,40 +3,38 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
 import type { ComponentProps } from 'react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Animated,
-    Easing,
-    FlatList,
-    Image,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Animated,
+  Easing,
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FudsButton } from '@/components/ui/fuds-button';
 import { FudsColors, FudsImages, FudsShadow, Spacing } from '@/constants/theme';
 import {
-    cartApi,
-    marketplaceApi,
-    type GroceryAisleRead,
-    type ProductWithVendor,
+  cartApi,
+  marketplaceApi,
+  type GroceryAisleRead,
+  type GrocerySubscriptionRead,
+  type MarketplaceProduct,
 } from '@/lib/api';
 import { safeGoBack } from '@/lib/navigation';
 
 type IonName = ComponentProps<typeof Ionicons>['name'];
 
 const ALL_AISLE = 'all';
-const TYPICAL_WEEKLY_ITEMS = 8;
-
 const HERO_IMAGES = [
   FudsImages.groceries,
   FudsImages.jollof,
@@ -64,17 +62,24 @@ export default function MarketplaceScreen() {
   const insets = useSafeAreaInsets();
   const [aisles, setAisles] = useState<GroceryAisleRead[]>([]);
   const [selectedAisle, setSelectedAisle] = useState<string>(ALL_AISLE);
-  const [allProducts, setAllProducts] = useState<ProductWithVendor[]>([]);
-  const [products, setProducts] = useState<ProductWithVendor[]>([]);
+  const [products, setProducts] = useState<MarketplaceProduct[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [catOpen, setCatOpen] = useState(false);
-  const [picked, setPicked] = useState<ProductWithVendor | null>(null);
+  const [picked, setPicked] = useState<MarketplaceProduct | null>(null);
   const [qty, setQty] = useState(1);
   const [adding, setAdding] = useState(false);
-  const [basketCount, setBasketCount] = useState(0);
-  const [basketTotal, setBasketTotal] = useState(0);
+  const [shoppingListOpen, setShoppingListOpen] = useState(false);
+  const [essentialSearch, setEssentialSearch] = useState('');
+  const [essentials, setEssentials] = useState<MarketplaceProduct[]>([]);
+  const [selectedEssentialIds, setSelectedEssentialIds] = useState<Set<number>>(new Set());
+  const [essentialQuantities, setEssentialQuantities] = useState<Record<number, number>>({});
+  const [essentialsLoading, setEssentialsLoading] = useState(false);
+  const [savingShoppingList, setSavingShoppingList] = useState(false);
+  const [shoppingListError, setShoppingListError] = useState<string | null>(null);
+  const [subscriptionFrequency, setSubscriptionFrequency] = useState<'weekly' | 'bi-weekly' | 'monthly'>('weekly');
+  const [subscription, setSubscription] = useState<GrocerySubscriptionRead | null>(null);
 
   const heroIndex = useRef(0);
   const lineIndex = useRef(0);
@@ -109,17 +114,15 @@ export default function MarketplaceScreen() {
   const loadCatalog = useCallback(async () => {
     try {
       setError(null);
-      const [aisleRows, catalog, full] = await Promise.all([
+      const [aisleRows, catalog] = await Promise.all([
         marketplaceApi.listAisles().catch(() => []),
         marketplaceApi.getCatalog({
           aisle: selectedAisle === ALL_AISLE ? undefined : selectedAisle,
           search: search.trim() || undefined,
         }),
-        marketplaceApi.getCatalog().catch(() => ({ aisles: [], products: [] })),
       ]);
       setAisles(aisleRows.length ? aisleRows : catalog.aisles);
       setProducts(catalog.products);
-      if (full.products.length) setAllProducts(full.products);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load marketplace');
     } finally {
@@ -179,34 +182,130 @@ export default function MarketplaceScreen() {
     return () => clearInterval(tick);
   }, [titleOpacity, titleY]);
 
-  const avgBasket = useMemo(() => {
-    const source = allProducts.length ? allProducts : products;
-    if (!source.length) return 0;
-    const avgItem = source.reduce((sum, p) => sum + Number(p.price || 0), 0) / source.length;
-    return avgItem * TYPICAL_WEEKLY_ITEMS;
-  }, [allProducts, products]);
+  useEffect(() => {
+    if (!shoppingListOpen) return;
+    let active = true;
+    const timer = setTimeout(async () => {
+      setEssentialsLoading(true);
+      setShoppingListError(null);
+      try {
+        const [rows, subscriptions] = await Promise.all([
+          marketplaceApi.listEssentials(essentialSearch.trim() || undefined),
+          marketplaceApi.listShoppingLists(),
+        ]);
+        if (active) setEssentials(rows);
+        const current = subscriptions[0] ?? null;
+        if (active && current && !essentialSearch.trim()) {
+          setSubscription(current);
+          setSubscriptionFrequency(current.frequency as 'weekly' | 'bi-weekly' | 'monthly');
+          setSelectedEssentialIds(new Set(current.items.map((item) => item.product_id)));
+          setEssentialQuantities(
+            Object.fromEntries(current.items.map((item) => [item.product_id, item.quantity]))
+          );
+        }
+      } catch (err) {
+        if (active) setShoppingListError(err instanceof Error ? err.message : 'Could not load essentials');
+      } finally {
+        if (active) setEssentialsLoading(false);
+      }
+    }, 180);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [essentialSearch, shoppingListOpen]);
 
-  const openQty = (product: ProductWithVendor) => {
+  const openSubscriptionEditor = () => {
+    setShoppingListError(null);
+    setShoppingListOpen(true);
+  };
+
+  const openQty = (product: MarketplaceProduct) => {
     setPicked(product);
     setQty(1);
   };
 
-  const addToBasket = async () => {
+  const addToCart = async () => {
     if (!picked) return;
     setAdding(true);
     try {
-      const cart = await cartApi.addItem({
-        product_id: picked.id,
-        vendor_id: picked.vendor_id,
+      await cartApi.addItem({
+        marketplace_product_id: picked.id,
         quantity: qty,
       });
-      setBasketCount(cart.item_count);
-      setBasketTotal(cart.total);
       setPicked(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add to basket');
+      setError(err instanceof Error ? err.message : 'Could not add to cart');
     } finally {
       setAdding(false);
+    }
+  };
+
+  const toggleEssential = (productId: number) => {
+    setSelectedEssentialIds((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) {
+        next.delete(productId);
+        setEssentialQuantities((quantities) => ({ ...quantities, [productId]: 0 }));
+      } else {
+        next.add(productId);
+        setEssentialQuantities((quantities) => ({ ...quantities, [productId]: quantities[productId] ?? 1 }));
+      }
+      return next;
+    });
+  };
+
+  const changeEssentialQuantity = (productId: number, delta: number) => {
+    setEssentialQuantities((quantities) => {
+      const nextQuantity = Math.max(0, Math.min(50, (quantities[productId] ?? 0) + delta));
+      setSelectedEssentialIds((selected) => {
+        const next = new Set(selected);
+        if (nextQuantity === 0) next.delete(productId);
+        else next.add(productId);
+        return next;
+      });
+      return { ...quantities, [productId]: nextQuantity };
+    });
+  };
+
+  const createShoppingList = async () => {
+    if (!selectedEssentialIds.size) return;
+    setSavingShoppingList(true);
+    setShoppingListError(null);
+    try {
+      const items = Array.from(selectedEssentialIds, (product_id) => ({
+        product_id,
+        quantity: essentialQuantities[product_id] ?? 1,
+      }));
+      const saved = subscription
+        ? await marketplaceApi.updateShoppingList(subscription.id, { items, frequency: subscriptionFrequency })
+        : await marketplaceApi.createShoppingList(items, subscriptionFrequency);
+      setSubscription(saved);
+      setShoppingListOpen(false);
+      setSelectedEssentialIds(new Set());
+      setEssentialSearch('');
+    } catch (err) {
+      setShoppingListError(err instanceof Error ? err.message : 'Could not create shopping list');
+    } finally {
+      setSavingShoppingList(false);
+    }
+  };
+
+  const deleteSubscription = async () => {
+    if (!subscription) return;
+    setSavingShoppingList(true);
+    setShoppingListError(null);
+    try {
+      await marketplaceApi.cancelShoppingList(subscription.id);
+      setSubscription(null);
+      setSelectedEssentialIds(new Set());
+      setEssentialQuantities({});
+      setEssentialSearch('');
+      setShoppingListOpen(false);
+    } catch (err) {
+      setShoppingListError(err instanceof Error ? err.message : 'Could not delete shopping list');
+    } finally {
+      setSavingShoppingList(false);
     }
   };
 
@@ -214,8 +313,6 @@ export default function MarketplaceScreen() {
     selectedAisle === ALL_AISLE
       ? 'All aisles'
       : aisles.find((a) => a.key === selectedAisle)?.label ?? 'Aisle';
-  const basketBottomInset = Math.max(insets.bottom + 12, 28);
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -232,15 +329,20 @@ export default function MarketplaceScreen() {
         <Animated.Image source={{ uri: heroImage }} style={[styles.heroBg, { opacity: imageOpacity }]} />
         <View style={styles.heroScrim} />
         <View style={styles.heroCopy}>
-          <Text style={styles.heroBadge}>FUDS MARKETPLACE</Text>
+          <Text style={styles.heroBadge}>FUDS MAKETPLACE</Text>
           <Animated.Text style={[styles.heroTitle, { opacity: titleOpacity, transform: [{ translateY: titleY }] }]}>
             {heroLine}
           </Animated.Text>
         </View>
         <View style={styles.heroStat}>
-          <Text style={styles.heroStatLabel}>Avg basket</Text>
-          <Text style={styles.heroStatValue}>{naira(avgBasket)}</Text>
-          <Text style={styles.heroStatHint}>{TYPICAL_WEEKLY_ITEMS} weekly items</Text>
+          <TouchableOpacity
+            style={styles.shoppingListButton}
+            onPress={openSubscriptionEditor}
+            activeOpacity={0.86}
+          >
+            <Ionicons name="list" size={17} color="#fff" />
+            <Text style={styles.shoppingListButtonText}>create maket list</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -316,10 +418,7 @@ export default function MarketplaceScreen() {
           keyExtractor={(item) => String(item.id)}
           numColumns={3}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={[
-            styles.grid,
-            basketCount > 0 && { paddingBottom: 92 + basketBottomInset },
-          ]}
+          contentContainerStyle={styles.grid}
           columnWrapperStyle={styles.columnWrap}
           ListEmptyComponent={
             <View style={styles.emptyBox}>
@@ -342,26 +441,6 @@ export default function MarketplaceScreen() {
           )}
         />
       )}
-
-      {basketCount > 0 ? (
-        <View style={[styles.basketBar, { bottom: basketBottomInset }]}>
-          <View>
-            <Text style={styles.basketCount}>
-              {basketCount} item{basketCount === 1 ? '' : 's'}
-            </Text>
-            <Text style={styles.basketTotal}>{naira(basketTotal)}</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.basketCta}
-            onPress={() => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              router.push('/(app)/(tabs)/orders' as any);
-            }}
-          >
-            <Text style={styles.basketCtaText}>View cart</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
 
       <Modal visible={!!picked} transparent animationType="none" onRequestClose={() => setPicked(null)}>
         <View style={styles.modalScrim}>
@@ -390,11 +469,117 @@ export default function MarketplaceScreen() {
                 <Ionicons name="add" size={18} color={FudsColors.foreground} />
               </TouchableOpacity>
             </View>
-            <FudsButton label={adding ? 'Adding…' : 'Add to basket'} loading={adding} onPress={addToBasket} />
+            <FudsButton label={adding ? 'Adding…' : 'Add to cart'} loading={adding} onPress={addToCart} />
             <TouchableOpacity onPress={() => setPicked(null)} style={styles.qtyCancel}>
               <Text style={styles.qtyCancelText}>Cancel</Text>
             </TouchableOpacity>
           </Animated.View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={shoppingListOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShoppingListOpen(false)}
+      >
+        <View style={styles.modalScrim}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setShoppingListOpen(false)} />
+          <View style={[styles.listSheet, { paddingBottom: Math.max(insets.bottom + 12, 28) }]}>
+            <View style={styles.listHeader}>
+              <View>
+                <Text style={styles.sheetTitle}>Subscribe to grocery shopping</Text>
+                <Text style={styles.sheetSub}>Pick essentials and choose how often FUDS should prepare them.</Text>
+              </View>
+              <TouchableOpacity style={styles.closeButton} onPress={() => setShoppingListOpen(false)}>
+                <Ionicons name="close" size={20} color={FudsColors.foreground} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.frequencyLabel}>Repeat groceries</Text>
+            <View style={styles.frequencyRow}>
+              {(['weekly', 'bi-weekly', 'monthly'] as const).map((frequency) => (
+                <TouchableOpacity
+                  key={frequency}
+                  style={[styles.frequencyButton, subscriptionFrequency === frequency && styles.frequencyButtonActive]}
+                  onPress={() => setSubscriptionFrequency(frequency)}
+                >
+                  <Text style={[styles.frequencyText, subscriptionFrequency === frequency && styles.frequencyTextActive]}>
+                    {frequency === 'bi-weekly' ? 'Bi-weekly' : frequency[0].toUpperCase() + frequency.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.listSearchWrap}>
+              <Ionicons name="search" size={16} color={FudsColors.mutedForeground} />
+              <TextInput
+                value={essentialSearch}
+                onChangeText={setEssentialSearch}
+                placeholder="Search essentials"
+                placeholderTextColor={FudsColors.mutedForeground}
+                style={styles.searchInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            {shoppingListError ? <Text style={styles.errorText}>{shoppingListError}</Text> : null}
+            {essentialsLoading ? (
+              <View style={styles.listLoading}><ActivityIndicator color={FudsColors.primary} /></View>
+            ) : (
+              <FlatList
+                data={essentials}
+                keyExtractor={(item) => String(item.id)}
+                style={styles.essentialList}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={<Text style={styles.emptyText}>No essentials found.</Text>}
+                renderItem={({ item }) => {
+                  const selected = selectedEssentialIds.has(item.id);
+                  return (
+                    <TouchableOpacity
+                      style={[styles.essentialRow, selected && styles.essentialRowSelected]}
+                      onPress={() => toggleEssential(item.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.checkCircle, selected && styles.checkCircleSelected]}>
+                        {selected ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
+                      </View>
+                      <View style={styles.essentialCopy}>
+                        <Text style={styles.essentialName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.essentialMeta}>{item.aisle || 'Essential'} · {naira(Number(item.price))}</Text>
+                      </View>
+                      <View style={styles.essentialQuantity}>
+                        <TouchableOpacity
+                          style={styles.essentialQuantityButton}
+                          onPress={() => changeEssentialQuantity(item.id, -1)}
+                        >
+                          <Ionicons name="remove" size={14} color={FudsColors.foreground} />
+                        </TouchableOpacity>
+                        <Text style={styles.essentialQuantityValue}>{essentialQuantities[item.id] ?? 0}</Text>
+                        <TouchableOpacity
+                          style={[styles.essentialQuantityButton, styles.essentialQuantityButtonActive]}
+                          onPress={() => changeEssentialQuantity(item.id, 1)}
+                        >
+                          <Ionicons name="add" size={14} color="#fff" />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            )}
+            {subscription ? (
+              <TouchableOpacity style={styles.deleteListButton} onPress={deleteSubscription} disabled={savingShoppingList}>
+                <Ionicons name="trash-outline" size={15} color={FudsColors.destructive} />
+                <Text style={styles.deleteListButtonText}>Delete shopping list</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.createListButton, !selectedEssentialIds.size && styles.createListButtonDisabled]}
+              onPress={createShoppingList}
+              disabled={!selectedEssentialIds.size || savingShoppingList}
+            >
+              {savingShoppingList ? <ActivityIndicator color="#fff" /> : <Text style={styles.createListButtonText}>{subscription ? 'Save changes' : 'Create subscription'} ({selectedEssentialIds.size})</Text>}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -435,9 +620,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     ...FudsShadow.sm,
   },
-  heroBg: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+  heroBg: { ...StyleSheet.absoluteFill, width: '100%', height: '100%' },
   heroScrim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(8, 80, 65, 0.48)',
   },
   heroCopy: { paddingHorizontal: 12, paddingBottom: 10, paddingRight: 108 },
@@ -456,9 +641,14 @@ const styles = StyleSheet.create({
     minWidth: 86,
     alignItems: 'center',
   },
-  heroStatLabel: { color: '#DFF8EE', fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
-  heroStatValue: { color: '#fff', fontSize: 13, fontWeight: '900', marginTop: 2 },
-  heroStatHint: { color: 'rgba(255,255,255,0.75)', fontSize: 8, fontWeight: '600', marginTop: 2 },
+  shoppingListButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: FudsColors.primary, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 9 },
+  shoppingListButtonText: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  frequencyLabel: { marginTop: 8, color: FudsColors.foreground, fontSize: 12, fontWeight: '800' },
+  frequencyRow: { flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 4 },
+  frequencyButton: { flex: 1, alignItems: 'center', borderWidth: 1, borderColor: FudsColors.border, borderRadius: 10, paddingVertical: 9 },
+  frequencyButtonActive: { backgroundColor: FudsColors.primary, borderColor: FudsColors.primary },
+  frequencyText: { color: FudsColors.foreground, fontSize: 11, fontWeight: '800' },
+  frequencyTextActive: { color: FudsColors.primaryForeground },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -495,7 +685,7 @@ const styles = StyleSheet.create({
   catBtnText: { flexShrink: 1, fontSize: 11, fontWeight: '800', color: FudsColors.foreground },
   catBtnTextOn: { color: '#fff' },
   catDismiss: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 40,
     paddingHorizontal: Spacing.three,
     paddingTop: 168,
@@ -556,28 +746,12 @@ const styles = StyleSheet.create({
   emptyBox: { alignItems: 'center', paddingVertical: 36 },
   emptyTitle: { marginTop: 8, fontSize: 14, fontWeight: '900', color: FudsColors.foreground },
   emptyText: { marginTop: 2, fontSize: 11, color: FudsColors.mutedForeground, fontWeight: '600' },
-  basketBar: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
-    backgroundColor: FudsColors.foreground,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  basketCount: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '700' },
-  basketTotal: { color: '#fff', fontSize: 16, fontWeight: '900' },
-  basketCta: { backgroundColor: FudsColors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999 },
-  basketCtaText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   modalScrim: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.22)',
   },
   filterSheet: {
@@ -594,6 +768,28 @@ const styles = StyleSheet.create({
     padding: 18,
     paddingBottom: 28,
   },
+  listSheet: { maxHeight: '82%', backgroundColor: FudsColors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16 },
+  listHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  closeButton: { width: 34, height: 34, borderRadius: 10, backgroundColor: FudsColors.background, alignItems: 'center', justifyContent: 'center' },
+  listSearchWrap: { flexDirection: 'row', alignItems: 'center', height: 42, marginTop: 10, marginBottom: 8, paddingHorizontal: 10, borderWidth: 1, borderColor: FudsColors.border, borderRadius: 12, backgroundColor: FudsColors.background },
+  listLoading: { height: 220, alignItems: 'center', justifyContent: 'center' },
+  essentialList: { maxHeight: 310 },
+  essentialRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: FudsColors.border, borderRadius: 10 },
+  essentialRowSelected: { backgroundColor: 'rgba(29,158,117,0.12)' },
+  checkCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: FudsColors.border, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  checkCircleSelected: { backgroundColor: FudsColors.primary, borderColor: FudsColors.primary },
+  essentialCopy: { flex: 1 },
+  essentialName: { color: FudsColors.foreground, fontSize: 13, fontWeight: '800' },
+  essentialMeta: { color: FudsColors.mutedForeground, fontSize: 11, fontWeight: '600', marginTop: 2 },
+  essentialQuantity: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8 },
+  essentialQuantityButton: { width: 26, height: 26, borderRadius: 8, borderWidth: 1, borderColor: FudsColors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: FudsColors.background },
+  essentialQuantityButtonActive: { backgroundColor: FudsColors.primary, borderColor: FudsColors.primary },
+  essentialQuantityValue: { minWidth: 16, textAlign: 'center', color: FudsColors.foreground, fontSize: 13, fontWeight: '900' },
+  createListButton: { minHeight: 46, marginTop: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: FudsColors.primary },
+  deleteListButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 10, paddingVertical: 9 },
+  deleteListButtonText: { color: FudsColors.destructive, fontSize: 12, fontWeight: '800' },
+  createListButtonDisabled: { opacity: 0.45 },
+  createListButtonText: { color: '#fff', fontSize: 13, fontWeight: '900' },
   sheetTitle: { fontSize: 16, fontWeight: '900', color: FudsColors.foreground },
   sheetSub: { marginTop: 4, marginBottom: 10, fontSize: 12, color: FudsColors.mutedForeground, fontWeight: '600' },
   filterRow: {

@@ -94,7 +94,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (!ready) return;
     // Sync React Native appearance for system components
     if (preference === 'system') {
-      Appearance.setColorScheme(null);
+      Appearance.setColorScheme('unspecified');
     } else {
       Appearance.setColorScheme(preference);
     }

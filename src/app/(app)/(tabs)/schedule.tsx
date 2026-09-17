@@ -2,44 +2,44 @@
  * 111 Meal Planner — breakfast 8–11am, lunch 1–4pm, dinner 5–7pm, Mon–Sun.
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import { useFocusEffect } from "expo-router/react-navigation";
+import { useCallback, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
-  Image,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Image,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
 
 import { FudsButton } from '@/components/ui/fuds-button';
 import {
-  MEAL_WINDOWS,
-  formatNaira,
-  formatSlotLabel,
-  getMealWindow,
-  type MealType,
+    MEAL_WINDOWS,
+    formatNaira,
+    formatSlotLabel,
+    getMealWindow,
+    type MealType,
 } from '@/constants/schedule';
 import {
-  BottomTabInset,
-  FudsColors,
-  FudsImages,
-  FudsRadius,
-  FudsShadow,
-  Spacing,
+    BottomTabInset,
+    FudsColors,
+    FudsImages,
+    FudsRadius,
+    FudsShadow,
+    Spacing,
 } from '@/constants/theme';
 import {
-  scheduleApi,
-  type ScheduleDayRead,
-  type ScheduleWeekRead,
-  type ScheduledMealRead,
+    scheduleApi,
+    type ScheduleDayRead,
+    type ScheduleWeekRead,
+    type ScheduledMealRead,
 } from '@/lib/api';
 
 function prettyDate(iso: string): string {
@@ -51,6 +51,7 @@ function prettyDate(iso: string): string {
 export default function ScheduleScreen() {
   const insets = useSafeAreaInsets();
   const tabClearance = BottomTabInset + (Platform.OS === 'android' ? Math.max(insets.bottom, 8) : 0);
+  const footerLift = 16;
 
   const [week, setWeek] = useState<ScheduleWeekRead | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -210,7 +211,7 @@ export default function ScheduleScreen() {
   }
 
   const footerVisible = filledMeals.length > 0;
-  const bottomPad = (footerVisible ? 150 : 24) + tabClearance;
+  const bottomPad = (footerVisible ? 150 : 24) + tabClearance + (footerVisible ? footerLift : 0);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -449,7 +450,9 @@ export default function ScheduleScreen() {
       </ScrollView>
 
       {footerVisible ? (
-        <View style={[styles.footer, { paddingBottom: tabClearance }]}>
+        <View
+          style={[styles.footer, { bottom: footerLift, paddingBottom: tabClearance }]}
+        >
           <View style={styles.footerMeta}>
             <Text style={styles.footerCount}>
               {filledMeals.length} meal{filledMeals.length === 1 ? '' : 's'} · {prettyDate(selectedDay!.date)}

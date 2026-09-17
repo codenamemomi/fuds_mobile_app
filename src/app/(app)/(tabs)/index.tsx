@@ -5,7 +5,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -308,11 +308,11 @@ export default function HomeScreen() {
             >
               <View style={styles.promoWave} />
               <View style={styles.promoCopy}>
-                <Text style={styles.promoEyebrow}>FUDS MARKETPLACE</Text>
-                <Text style={styles.promoTitle}>Pay less, eat better</Text>
+                <Text style={styles.promoEyebrow}>FUDS MAKETPLACE</Text>
+                <Text style={styles.promoTitle}>Drop your shoping list and pay less</Text>
                 <Text style={styles.promoSub}>Fresh groceries and essentials delivered fast</Text>
                 <View style={styles.promoCta}>
-                  <Text style={styles.promoCtaText}>FUDS Marketplace</Text>
+                  <Text style={styles.promoCtaText}>FUDS Maketplace</Text>
                 </View>
               </View>
               <Image source={{ uri: FudsImages.jollof }} style={styles.promoImage} />
@@ -421,6 +421,7 @@ export default function HomeScreen() {
               style={[styles.vendorCard, !open && styles.vendorCardClosed]}
               activeOpacity={0.92}
               onPress={() => goToVendor(item.id)}
+              disabled={!open}
             >
               <View style={styles.vendorImageWrap}>
                 <Image
@@ -1037,7 +1038,7 @@ const styles = StyleSheet.create({
   vendorImage: { width: '100%', height: '100%' },
   vendorImageDim: { opacity: 0.55 },
   closedOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.42)',
     alignItems: 'center',
     justifyContent: 'center',

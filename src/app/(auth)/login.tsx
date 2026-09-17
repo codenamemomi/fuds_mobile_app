@@ -5,7 +5,7 @@
  */
 
 import { router } from 'expo-router';
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Alert,
   StyleSheet,
@@ -59,7 +59,10 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      <KeyboardScreen contentContainerStyle={styles.scroll}>
+      <KeyboardScreen
+        contentContainerStyle={styles.scroll}
+        scrollToEndOnKeyboardShow
+      >
         {/* Brand mark */}
         <View style={styles.brandMark}>
           <View style={styles.logoBox}>
@@ -156,6 +159,7 @@ const styles = StyleSheet.create({
     // Avoid justifyContent: 'center' — it traps inputs under the Android keyboard
     paddingHorizontal: 24,
     paddingTop: Spacing.four,
+    paddingBottom: 260,
     gap: Spacing.five,
   },
   brandMark: {
