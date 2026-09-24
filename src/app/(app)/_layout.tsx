@@ -30,9 +30,11 @@ export default function AppLayout() {
     >
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="marketplace" options={{ headerShown: false }} />
+      <Stack.Screen name="category/[group]" options={{ headerShown: false }} />
       <Stack.Screen name="schedule/pick-meal" options={{ headerShown: false }} />
       <Stack.Screen name="vendor/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="settings" options={{ headerShown: false }} />
+      <Stack.Screen name="support" options={{ headerShown: false }} />
       <Stack.Screen name="password-security" options={{ headerShown: false }} />
       <Stack.Screen name="payment-settings" options={{ headerShown: false }} />
       <Stack.Screen name="payment/[orderId]" options={{ headerShown: false }} />

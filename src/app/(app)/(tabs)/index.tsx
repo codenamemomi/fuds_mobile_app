@@ -70,7 +70,6 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeGroup, setActiveGroup] = useState<string | null>(null);
 
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
@@ -85,16 +84,14 @@ export default function HomeScreen() {
   const searchInputRef = useRef<TextInput>(null);
   const searchSeq = useRef(0);
 
-  const loadData = useCallback(async (group: string | null) => {
+  const loadData = useCallback(async () => {
     try {
       setError(null);
       const [cats, vendorList, products] = await Promise.all([
         browseApi.listCategories().catch(() => FALLBACK_CATEGORIES),
-        browseApi.listVendors(group ? { group, limit: 40 } : { limit: 40 }),
-        browseApi.listProducts(group ? { group, limit: 12 } : { limit: 12 }),
+        browseApi.listVendors({ limit: 40 }),
+        browseApi.listProducts({ limit: 12 }),
       ]);
-      // Don't swap the category array on every filter — remounting the grid
-      // was making icons vanish on the second tap (APK).
       setCategories((prev) => (cats.length ? cats : prev.length ? prev : FALLBACK_CATEGORIES));
       setVendors(vendorList);
       setFeatured(products);
@@ -106,16 +103,16 @@ export default function HomeScreen() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await loadData(activeGroup);
+      await loadData();
       setLoading(false);
     })();
-  }, [loadData, activeGroup]);
+  }, [loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData(activeGroup);
+    await loadData();
     setRefreshing(false);
-  }, [loadData, activeGroup]);
+  }, [loadData]);
 
   const goToVendor = (vendorId: number) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,8 +132,9 @@ export default function HomeScreen() {
     }
   };
 
-  const selectGroup = (key: string) => {
-    setActiveGroup((prev) => (prev === key ? null : key));
+  const openCategory = (key: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    router.push(`/(app)/category/${key}` as any);
   };
 
   const openSearch = () => {
@@ -201,9 +199,6 @@ export default function HomeScreen() {
     goToVendor(product.vendor_id);
   };
 
-  const activeLabel =
-    categories.find((c) => c.key === activeGroup)?.label ?? 'All stores';
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <AddressEditModal
@@ -233,65 +228,23 @@ export default function HomeScreen() {
         onScrollBeginDrag={dismissSearchOnScroll}
         ListHeaderComponent={
           <>
-            {/* Category hub — extra top pad so floating location/search sit on the yellow card */}
             <View style={styles.categoryHub}>
-              <View style={styles.hubBlobA} />
-              <View style={styles.hubBlobB} />
-              <View style={styles.hubBlobC} />
-
+              <Text style={styles.categoryEyebrow}>Explore</Text>
               <View style={styles.categoryGrid}>
-                {categories.map((cat, idx) => {
+                {categories.map((cat) => {
                   const visual = getCategoryVisual(cat.icon || cat.key);
-                  const selected = activeGroup === cat.key;
-                  const radius = idx % 2 === 0 ? 28 : 36;
                   return (
-                    <View key={cat.key} style={styles.categoryItem}>
-                      <AnimatedPressable
-                        scaleTo={0.92}
-                        onPress={() => selectGroup(cat.key)}
-                        style={styles.categoryPress}
-                      >
-                        <View
-                          style={[
-                            styles.categoryShape,
-                            {
-                              backgroundColor: visual.bg,
-                              borderRadius: radius,
-                              borderColor: selected ? visual.tint : 'transparent',
-                              borderWidth: selected ? 2.5 : 0,
-                            },
-                          ]}
-                        >
-                          <View
-                            style={[
-                              styles.categoryShine,
-                              { borderTopLeftRadius: radius, borderTopRightRadius: radius },
-                            ]}
-                          />
-                          <Ionicons name={visual.icon} size={28} color={visual.tint} />
-                        </View>
-                        <Text style={[styles.categoryLabel, selected && { color: visual.tint }]}>
-                          {cat.label}
-                        </Text>
-                        {cat.vendor_count > 0 ? (
-                          <View
-                            style={[
-                              styles.countPill,
-                              selected && { backgroundColor: visual.tint },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.categoryCount,
-                                selected && { color: '#fff' },
-                              ]}
-                            >
-                              {cat.vendor_count}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </AnimatedPressable>
-                    </View>
+                    <AnimatedPressable
+                      key={cat.key}
+                      scaleTo={0.92}
+                      onPress={() => openCategory(cat.key)}
+                      style={styles.categoryItem}
+                    >
+                      <View style={[styles.categoryShape, { backgroundColor: visual.bg }]}>
+                        <Ionicons name={visual.icon} size={26} color={visual.tint} />
+                      </View>
+                      <Text style={styles.categoryLabel}>{cat.label}</Text>
+                    </AnimatedPressable>
                   );
                 })}
               </View>
@@ -343,9 +296,7 @@ export default function HomeScreen() {
             {featured.length > 0 && (
               <>
                 <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>
-                    {activeGroup ? `${activeLabel} picks` : 'Featured'} ✨
-                  </Text>
+                  <Text style={styles.sectionTitle}>Featured ✨</Text>
                   <Text style={styles.seeAll}>See all</Text>
                 </View>
                 <ScrollView
@@ -390,16 +341,8 @@ export default function HomeScreen() {
             )}
 
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>
-                {activeGroup ? activeLabel : 'All stores'}
-              </Text>
-              {activeGroup ? (
-                <TouchableOpacity onPress={() => setActiveGroup(null)}>
-                  <Text style={styles.seeAll}>Clear filter</Text>
-                </TouchableOpacity>
-              ) : (
-                <Text style={styles.seeAll}>{vendors.length} nearby</Text>
-              )}
+              <Text style={styles.sectionTitle}>All stores</Text>
+              <Text style={styles.seeAll}>{vendors.length} nearby</Text>
             </View>
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -479,11 +422,7 @@ export default function HomeScreen() {
               <View style={styles.emptyShape}>
                 <Ionicons name="storefront-outline" size={36} color={FudsColors.mutedForeground} />
               </View>
-              <Text style={styles.emptyText}>
-                {activeGroup
-                  ? `No ${activeLabel.toLowerCase()} stores nearby yet.`
-                  : 'No vendors nearby yet.'}
-              </Text>
+              <Text style={styles.emptyText}>No vendors nearby yet.</Text>
             </View>
           )
         }
@@ -791,91 +730,39 @@ const styles = StyleSheet.create({
   },
 
   categoryHub: {
-    marginHorizontal: Spacing.three,
-    marginTop: Spacing.two,
-    backgroundColor: '#F5C518',
-    borderRadius: 28,
-    paddingTop: 62,
-    paddingBottom: Spacing.four,
-    paddingHorizontal: Spacing.two,
-    overflow: 'hidden',
-    ...FudsShadow.md,
+    marginTop: 58,
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.two,
   },
-  hubBlobA: {
-    position: 'absolute',
-    top: -30,
-    right: -20,
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(255,255,255,0.22)',
-  },
-  hubBlobB: {
-    position: 'absolute',
-    bottom: -40,
-    left: -20,
-    width: 120,
-    height: 90,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,180,0,0.45)',
-    transform: [{ rotate: '-15deg' }],
-  },
-  hubBlobC: {
-    position: 'absolute',
-    top: 40,
-    left: '40%',
-    width: 50,
-    height: 50,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    transform: [{ rotate: '20deg' }],
+  categoryEyebrow: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: FudsColors.mutedForeground,
+    letterSpacing: 0.6,
+    marginBottom: 12,
   },
   categoryGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
-    rowGap: 16,
-    zIndex: 2,
+    justifyContent: 'space-between',
   },
   categoryItem: {
-    width: '30%',
+    flex: 1,
     alignItems: 'center',
+    gap: 8,
   },
-  categoryPress: { alignItems: 'center', gap: 6 },
   categoryShape: {
-    width: 74,
-    height: 74,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
     ...FudsShadow.sm,
   },
-  categoryShine: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '45%',
-    backgroundColor: 'rgba(255,255,255,0.35)',
-  },
   categoryLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
     color: FudsColors.foreground,
     textAlign: 'center',
-  },
-  countPill: {
-    minWidth: 22,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 10,
-    backgroundColor: 'rgba(8,80,65,0.12)',
-    alignItems: 'center',
-  },
-  categoryCount: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: 'rgba(8,80,65,0.7)',
   },
 
   promoBanner: {

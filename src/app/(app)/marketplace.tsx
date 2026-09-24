@@ -249,7 +249,10 @@ export default function MarketplaceScreen() {
         setEssentialQuantities((quantities) => ({ ...quantities, [productId]: 0 }));
       } else {
         next.add(productId);
-        setEssentialQuantities((quantities) => ({ ...quantities, [productId]: quantities[productId] ?? 1 }));
+        setEssentialQuantities((quantities) => ({
+          ...quantities,
+          [productId]: quantities[productId] > 0 ? quantities[productId] : 1,
+        }));
       }
       return next;
     });
@@ -533,15 +536,18 @@ export default function MarketplaceScreen() {
                 ListEmptyComponent={<Text style={styles.emptyText}>No essentials found.</Text>}
                 renderItem={({ item }) => {
                   const selected = selectedEssentialIds.has(item.id);
+                  const quantity = selected ? Math.max(1, essentialQuantities[item.id] ?? 1) : 0;
                   return (
-                    <TouchableOpacity
-                      style={[styles.essentialRow, selected && styles.essentialRowSelected]}
-                      onPress={() => toggleEssential(item.id)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={[styles.checkCircle, selected && styles.checkCircleSelected]}>
+                    <View style={[styles.essentialRow, selected && styles.essentialRowSelected]}>
+                      <TouchableOpacity
+                        style={[styles.checkCircle, selected && styles.checkCircleSelected]}
+                        onPress={() => toggleEssential(item.id)}
+                        hitSlop={8}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: selected }}
+                      >
                         {selected ? <Ionicons name="checkmark" size={14} color="#fff" /> : null}
-                      </View>
+                      </TouchableOpacity>
                       <View style={styles.essentialCopy}>
                         <Text style={styles.essentialName} numberOfLines={1}>{item.name}</Text>
                         <Text style={styles.essentialMeta}>{item.aisle || 'Essential'} · {naira(Number(item.price))}</Text>
@@ -550,18 +556,20 @@ export default function MarketplaceScreen() {
                         <TouchableOpacity
                           style={styles.essentialQuantityButton}
                           onPress={() => changeEssentialQuantity(item.id, -1)}
+                          hitSlop={6}
                         >
                           <Ionicons name="remove" size={14} color={FudsColors.foreground} />
                         </TouchableOpacity>
-                        <Text style={styles.essentialQuantityValue}>{essentialQuantities[item.id] ?? 0}</Text>
+                        <Text style={styles.essentialQuantityValue}>{quantity}</Text>
                         <TouchableOpacity
                           style={[styles.essentialQuantityButton, styles.essentialQuantityButtonActive]}
                           onPress={() => changeEssentialQuantity(item.id, 1)}
+                          hitSlop={6}
                         >
                           <Ionicons name="add" size={14} color="#fff" />
                         </TouchableOpacity>
                       </View>
-                    </TouchableOpacity>
+                    </View>
                   );
                 }}
               />
@@ -776,13 +784,13 @@ const styles = StyleSheet.create({
   essentialList: { maxHeight: 310 },
   essentialRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: FudsColors.border, borderRadius: 10 },
   essentialRowSelected: { backgroundColor: 'rgba(29,158,117,0.12)' },
-  checkCircle: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: FudsColors.border, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  checkCircle: { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, borderColor: FudsColors.border, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   checkCircleSelected: { backgroundColor: FudsColors.primary, borderColor: FudsColors.primary },
   essentialCopy: { flex: 1 },
   essentialName: { color: FudsColors.foreground, fontSize: 13, fontWeight: '800' },
   essentialMeta: { color: FudsColors.mutedForeground, fontSize: 11, fontWeight: '600', marginTop: 2 },
   essentialQuantity: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8 },
-  essentialQuantityButton: { width: 26, height: 26, borderRadius: 8, borderWidth: 1, borderColor: FudsColors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: FudsColors.background },
+  essentialQuantityButton: { width: 30, height: 30, borderRadius: 8, borderWidth: 1, borderColor: FudsColors.border, alignItems: 'center', justifyContent: 'center', backgroundColor: FudsColors.background },
   essentialQuantityButtonActive: { backgroundColor: FudsColors.primary, borderColor: FudsColors.primary },
   essentialQuantityValue: { minWidth: 16, textAlign: 'center', color: FudsColors.foreground, fontSize: 13, fontWeight: '900' },
   createListButton: { minHeight: 46, marginTop: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: FudsColors.primary },

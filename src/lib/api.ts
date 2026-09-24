@@ -521,7 +521,8 @@ export const ordersApi = {
       body: JSON.stringify(payload),
     }),
 
-  listOrders: () => request<OrderRead[]>('/orders', { auth: true }),
+  listOrders: (paymentStatus?: string) =>
+    request<OrderRead[]>(`/orders${toQuery({ payment_status: paymentStatus })}`, { auth: true }),
 
   getOrder: (orderId: number) => request<OrderRead>(`/orders/${orderId}`, { auth: true }),
 };

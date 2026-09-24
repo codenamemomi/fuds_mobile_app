@@ -1,6 +1,6 @@
 /**
- * Profile — view + edit via PUT /api/v1/auth/me
- * Password changes live under Settings.
+ * Profile — Chowdeck / Glovo-style account hub.
+ * View: greeting, shortcuts, grouped rows. Edit stays a dedicated form.
  */
 
 import { router } from 'expo-router';
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from "expo-router/react-navigation";
+import { useFocusEffect } from 'expo-router/react-navigation';
 
 import { AddressField } from '@/components/ui/address-field';
 import { FudsButton } from '@/components/ui/fuds-button';
@@ -35,13 +35,25 @@ const DIET_GOALS = [
   'No Preference',
 ] as const;
 
-/** Strip +234 / 234 / leading 0 for the local input field */
 function toLocalPhone(phone: string | null | undefined): string {
   if (!phone) return '';
   let digits = phone.replace(/\D/g, '');
   if (digits.startsWith('234')) digits = digits.slice(3);
   if (digits.startsWith('0')) digits = digits.slice(1);
   return digits;
+}
+
+function firstName(fullname: string | null | undefined): string {
+  const name = (fullname ?? '').trim();
+  if (!name) return 'Foodie';
+  return name.split(/\s+/)[0];
+}
+
+function initials(fullname: string | null | undefined): string {
+  const parts = (fullname ?? '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'F';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
 export default function ProfileScreen() {
@@ -70,12 +82,9 @@ export default function ProfileScreen() {
   }, [user]);
 
   useEffect(() => {
-    if (!editing) {
-      hydrateFromUser();
-    }
+    if (!editing) hydrateFromUser();
   }, [user, editing, hydrateFromUser]);
 
-  // Refresh from API when tab is focused (unless mid-edit)
   useFocusEffect(
     useCallback(() => {
       if (editing) return;
@@ -114,31 +123,22 @@ export default function ProfileScreen() {
       } = {};
 
       const nextName = fullname.trim();
-      if (nextName && nextName !== (user?.fullname ?? '')) {
-        payload.fullname = nextName;
-      }
+      if (nextName && nextName !== (user?.fullname ?? '')) payload.fullname = nextName;
 
       const nextPhone = phoneLocal.replace(/\D/g, '');
       const currentLocal = toLocalPhone(user?.phone);
       if (nextPhone && nextPhone !== currentLocal) {
-        // Backend format_phone_number → +234…
         payload.phone = nextPhone.startsWith('0') ? nextPhone : `0${nextPhone}`;
       }
 
       const nextEmail = email.trim();
-      if (nextEmail && nextEmail !== (user?.email ?? '')) {
-        payload.email = nextEmail;
-      }
+      if (nextEmail && nextEmail !== (user?.email ?? '')) payload.email = nextEmail;
 
       const nextAddress = address.trim();
-      if (nextAddress !== (user?.address ?? '').trim()) {
-        payload.address = nextAddress;
-      }
+      if (nextAddress !== (user?.address ?? '').trim()) payload.address = nextAddress;
 
       const nextDiet = (dietGoal ?? '').trim();
-      if (nextDiet !== (user?.diet_goal ?? '').trim()) {
-        payload.diet_goal = nextDiet;
-      }
+      if (nextDiet !== (user?.diet_goal ?? '').trim()) payload.diet_goal = nextDiet;
 
       if (Object.keys(payload).length === 0) {
         setEditing(false);
@@ -149,8 +149,7 @@ export default function ProfileScreen() {
       setEditing(false);
       Alert.alert('Saved', 'Your profile has been updated.');
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Could not update profile';
-      setError(msg);
+      setError(e instanceof Error ? e.message : 'Could not update profile');
     } finally {
       setSaving(false);
     }
@@ -161,90 +160,29 @@ export default function ProfileScreen() {
     setEditing(false);
   }
 
+  const go = (path: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    router.push(path as any);
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <KeyboardScreen contentContainerStyle={styles.content}>
-          <View style={styles.titleRow}>
-            <Text style={styles.pageTitle}>Profile</Text>
-            <View style={styles.titleActions}>
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  router.push('/settings' as any);
-                }}
-                activeOpacity={0.85}
-                hitSlop={8}
-              >
-                <Ionicons name="settings-outline" size={20} color={FudsColors.foreground} />
+        {editing ? (
+          <>
+            <View style={styles.editHeader}>
+              <TouchableOpacity onPress={handleCancel} hitSlop={8} style={styles.backChip}>
+                <Ionicons name="chevron-back" size={20} color={FudsColors.foreground} />
               </TouchableOpacity>
-              {!editing ? (
-                <TouchableOpacity
-                  style={styles.editBtn}
-                  onPress={() => {
-                    hydrateFromUser();
-                    setEditing(true);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="create-outline" size={16} color={FudsColors.primary} />
-                  <Text style={styles.editBtnText}>Edit</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity onPress={handleCancel} hitSlop={8}>
-                  <Text style={styles.cancelText}>Cancel</Text>
-                </TouchableOpacity>
-              )}
+              <Text style={styles.editTitle}>Edit profile</Text>
+              <View style={{ width: 36 }} />
             </View>
-          </View>
-
-          {/* Hero */}
-          <View style={styles.heroCard}>
-            <View style={styles.avatarBox}>
-              <Ionicons name="person" size={36} color={FudsColors.primaryForeground} />
-            </View>
-            <Text style={styles.name}>{user?.fullname ?? 'Foodie'}</Text>
-            <Text style={styles.phone}>{user?.phone}</Text>
-            {user?.phone_verified ? (
-              <View style={styles.verifiedPill}>
-                <Ionicons name="checkmark-circle" size={14} color={FudsColors.openText} />
-                <Text style={styles.verifiedText}>Verified</Text>
+            {error ? (
+              <View style={styles.errorBanner}>
+                <Ionicons name="alert-circle" size={16} color={FudsColors.destructive} />
+                <Text style={styles.errorBannerText}>{error}</Text>
               </View>
-            ) : (
-              <View style={[styles.verifiedPill, styles.unverifiedPill]}>
-                <Ionicons name="alert-circle" size={14} color={FudsColors.destructive} />
-                <Text style={[styles.verifiedText, { color: FudsColors.destructive }]}>
-                  Not verified
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {error ? (
-            <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={16} color={FudsColors.destructive} />
-              <Text style={styles.errorBannerText}>{error}</Text>
-            </View>
-          ) : null}
-
-          {!editing ? (
-            <View style={styles.card}>
-              <ProfileRow icon="person-outline" label="Name" value={user?.fullname ?? '—'} />
-              <ProfileRow icon="mail-outline" label="Email" value={user?.email ?? '—'} />
-              <ProfileRow icon="call-outline" label="Phone" value={user?.phone ?? '—'} />
-              <ProfileRow
-                icon="location-outline"
-                label="Address"
-                value={user?.address ?? 'Not set'}
-              />
-              <ProfileRow
-                icon="flag-outline"
-                label="Diet Goal"
-                value={user?.diet_goal ?? 'Not set'}
-                last
-              />
-            </View>
-          ) : (
+            ) : null}
             <View style={styles.formCard}>
               <FudsInput
                 label="Full name"
@@ -253,14 +191,10 @@ export default function ProfileScreen() {
                 value={fullname}
                 onChangeText={setFullname}
                 error={fieldErrors.fullname}
-                leftContent={<Text style={styles.emoji}>👤</Text>}
               />
-
               <View style={styles.fieldWrap}>
                 <Text style={styles.fieldLabel}>MOBILE NUMBER</Text>
-                <View
-                  style={[styles.phoneRow, !!fieldErrors.phone && styles.phoneRowError]}
-                >
+                <View style={[styles.phoneRow, !!fieldErrors.phone && styles.phoneRowError]}>
                   <View style={styles.dialCode}>
                     <Text style={styles.flag}>🇳🇬</Text>
                     <Text style={styles.dialCodeText}>+234</Text>
@@ -274,14 +208,8 @@ export default function ProfileScreen() {
                     onChangeText={(t) => setPhoneLocal(t.replace(/\D/g, '').slice(0, 11))}
                   />
                 </View>
-                {fieldErrors.phone ? (
-                  <Text style={styles.fieldError}>{fieldErrors.phone}</Text>
-                ) : null}
-                <Text style={styles.hint}>
-                  Changing phone may require re-verification on next login.
-                </Text>
+                {fieldErrors.phone ? <Text style={styles.fieldError}>{fieldErrors.phone}</Text> : null}
               </View>
-
               <FudsInput
                 label="Email"
                 placeholder="you@example.com"
@@ -290,16 +218,13 @@ export default function ProfileScreen() {
                 value={email}
                 onChangeText={setEmail}
                 error={fieldErrors.email}
-                leftContent={<Text style={styles.emoji}>✉️</Text>}
               />
-
               <AddressField
                 label="Delivery address"
                 value={address}
                 onChangeText={setAddress}
                 placeholder="Street, estate / landmark, area"
               />
-
               <View style={styles.chipsSection}>
                 <Text style={styles.chipsLabel}>DIET GOAL</Text>
                 <View style={styles.chipsGrid}>
@@ -312,188 +237,424 @@ export default function ProfileScreen() {
                         onPress={() => setDietGoal(isSelected ? null : goal)}
                         activeOpacity={0.75}
                       >
-                        <Text
-                          style={[styles.chipLabel, isSelected && styles.chipLabelSelected]}
-                        >
+                        <Text style={[styles.chipLabel, isSelected && styles.chipLabelSelected]}>
                           {goal}
                         </Text>
-                        {isSelected ? <Text style={styles.chipCheck}>✓</Text> : null}
                       </TouchableOpacity>
                     );
                   })}
                 </View>
               </View>
-
-              <FudsButton
-                label="Save changes"
-                loading={saving}
-                onPress={handleSave}
-                style={{ marginTop: Spacing.two }}
-              />
+              <FudsButton label="Save changes" loading={saving} onPress={handleSave} />
             </View>
-          )}
+          </>
+        ) : (
+          <>
+            <View style={styles.hero}>
+              <View style={styles.heroTop}>
+                <Text style={styles.kicker}>YOUR ACCOUNT</Text>
+                <TouchableOpacity style={styles.settingsOrb} onPress={() => go('/support')} hitSlop={8}>
+                  <Ionicons name="headset-outline" size={18} color={FudsColors.foreground} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.identity}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarLetters}>{initials(user?.fullname)}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.hello}>Hey, {firstName(user?.fullname)} 👋</Text>
+                  <Text style={styles.phoneLine}>{user?.phone ?? 'Add your number'}</Text>
+                  <View style={styles.badgeRow}>
+                    {user?.phone_verified ? (
+                      <View style={styles.badge}>
+                        <Ionicons name="shield-checkmark" size={12} color={FudsColors.openText} />
+                        <Text style={styles.badgeText}>Verified</Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.badge, styles.badgeWarn]}>
+                        <Ionicons name="alert-circle" size={12} color={FudsColors.destructive} />
+                        <Text style={[styles.badgeText, { color: FudsColors.destructive }]}>Unverified</Text>
+                      </View>
+                    )}
+                    {user?.diet_goal ? (
+                      <View style={styles.badgeDiet}>
+                        <Ionicons name="leaf" size={12} color={FudsColors.primary} />
+                        <Text style={styles.badgeDietText}>{user.diet_goal}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              </View>
+            </View>
 
-          {/* Settings entry (also in header) */}
-          {!editing && (
             <TouchableOpacity
-              style={styles.settingsRow}
+              style={styles.addressCard}
               activeOpacity={0.88}
               onPress={() => {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                router.push('/settings' as any);
+                hydrateFromUser();
+                setEditing(true);
               }}
             >
-              <View style={styles.settingsIcon}>
-                <Ionicons name="settings-outline" size={20} color={FudsColors.primary} />
+              <View style={styles.pin}>
+                <Ionicons name="navigate" size={16} color={FudsColors.primaryForeground} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.settingsTitle}>Settings</Text>
-                <Text style={styles.settingsSub}>Password, security &amp; more</Text>
+                <Text style={styles.addressLabel}>Deliver to</Text>
+                <Text style={styles.addressValue} numberOfLines={2}>
+                  {user?.address?.trim() || 'Add a delivery address'}
+                </Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={FudsColors.mutedForeground} />
+              <Text style={styles.changeLink}>Change</Text>
             </TouchableOpacity>
-          )}
 
-          <FudsButton
-            label="Sign Out"
-            variant="ghost"
-            onPress={() => {
-              Alert.alert('Sign out', 'Are you sure you want to sign out?', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
-              ]);
-            }}
-            style={{ marginTop: Spacing.four }}
-          />
+            <View style={styles.shortcuts}>
+              <Shortcut
+                icon="receipt"
+                tint="#E8F8F2"
+                color="#0F8A62"
+                label="Orders"
+                onPress={() => go('/(app)/(tabs)/orders?tab=history')}
+              />
+              <Shortcut
+                icon="calendar"
+                tint="#FFF4E5"
+                color="#C27803"
+                label="111 plan"
+                onPress={() => go('/(app)/(tabs)/schedule')}
+              />
+              <Shortcut
+                icon="storefront"
+                tint="#EEE8FF"
+                color="#5B4B8A"
+                label="Market"
+                onPress={() => go('/(app)/marketplace')}
+              />
+              <Shortcut
+                icon="card"
+                tint="#E7F3FF"
+                color="#1D6FA8"
+                label="Payments"
+                onPress={() => go('/payment-settings')}
+              />
+            </View>
+
+            <Text style={styles.sectionTitle}>Account</Text>
+            <View style={styles.menuCard}>
+              <MenuRow
+                icon="person-outline"
+                title="Personal details"
+                subtitle={user?.fullname || 'Name, email, phone'}
+                onPress={() => {
+                  hydrateFromUser();
+                  setEditing(true);
+                }}
+              />
+              <MenuRow
+                icon="flag-outline"
+                title="Diet goal"
+                subtitle={user?.diet_goal || 'Tell us how you like to eat'}
+                onPress={() => {
+                  hydrateFromUser();
+                  setEditing(true);
+                }}
+              />
+              <MenuRow
+                icon="lock-closed-outline"
+                title="Password & security"
+                subtitle="Update your login details"
+                onPress={() => go('/password-security')}
+              />
+              <MenuRow
+                icon="settings-outline"
+                title="Settings"
+                subtitle="Theme, notifications, app"
+                onPress={() => go('/settings')}
+                last
+              />
+            </View>
+
+            <Text style={styles.sectionTitle}>Support</Text>
+            <View style={styles.menuCard}>
+              <MenuRow
+                icon="help-buoy-outline"
+                title="Help centre"
+                subtitle="Orders, refunds, and FAQs"
+                onPress={() => go('/support')}
+              />
+              <MenuRow
+                icon="shield-outline"
+                title="Privacy"
+                subtitle="How we use your data"
+                onPress={() => go('/privacy-permissions')}
+                last
+              />
+            </View>
+
+            <TouchableOpacity
+              style={styles.signOut}
+              activeOpacity={0.85}
+              onPress={() => {
+                Alert.alert('Sign out', 'Are you sure you want to sign out?', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+                ]);
+              }}
+            >
+              <Ionicons name="log-out-outline" size={18} color={FudsColors.destructive} />
+              <Text style={styles.signOutText}>Sign out</Text>
+            </TouchableOpacity>
+          </>
+        )}
       </KeyboardScreen>
     </SafeAreaView>
   );
 }
 
-function ProfileRow({
+function Shortcut({
   icon,
+  tint,
+  color,
   label,
-  value,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  tint: string;
+  color: string;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.shortcut} onPress={onPress} activeOpacity={0.86}>
+      <View style={[styles.shortcutIcon, { backgroundColor: tint }]}>
+        <Ionicons name={icon} size={20} color={color} />
+      </View>
+      <Text style={styles.shortcutLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function MenuRow({
+  icon,
+  title,
+  subtitle,
+  onPress,
   last,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  value: string;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
   last?: boolean;
 }) {
   return (
-    <View style={[styles.row, last && styles.rowLast]}>
-      <View style={styles.rowIcon}>
+    <TouchableOpacity
+      style={[styles.menuRow, last && styles.menuRowLast]}
+      onPress={onPress}
+      activeOpacity={0.82}
+    >
+      <View style={styles.menuIcon}>
         <Ionicons name={icon} size={18} color={FudsColors.primary} />
       </View>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue} numberOfLines={2}>
-        {value}
-      </Text>
-    </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.menuTitle}>{title}</Text>
+        <Text style={styles.menuSub} numberOfLines={1}>
+          {subtitle}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={FudsColors.mutedForeground} />
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: FudsColors.background },
-  content: { padding: Spacing.three, paddingBottom: BottomTabInset + Spacing.four },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: Spacing.three,
-  },
-  pageTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: FudsColors.foreground,
-  },
-  titleActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: FudsColors.card,
-    borderWidth: 1,
-    borderColor: FudsColors.border,
-  },
-  editBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(29,158,117,0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: FudsRadius.full,
-  },
-  editBtnText: { fontSize: 13, fontWeight: '800', color: FudsColors.primary },
-  cancelText: { fontSize: 14, fontWeight: '700', color: FudsColors.mutedForeground },
-  heroCard: {
-    alignItems: 'center',
-    backgroundColor: FudsColors.card,
-    borderRadius: FudsRadius.xl,
-    borderWidth: 1,
-    borderColor: FudsColors.border,
-    paddingVertical: Spacing.four,
-    paddingHorizontal: Spacing.three,
-    marginBottom: Spacing.three,
-    ...FudsShadow.sm,
-  },
-  avatarBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  content: { paddingBottom: BottomTabInset + Spacing.five },
+  hero: {
     backgroundColor: FudsColors.primary,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+    paddingBottom: Spacing.four,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+  },
+  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  kicker: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  settingsOrb: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.two,
   },
-  name: { fontSize: 20, fontWeight: '800', color: FudsColors.foreground },
-  phone: { fontSize: 13, color: FudsColors.mutedForeground, marginTop: 4, fontWeight: '600' },
-  verifiedPill: {
-    marginTop: Spacing.two,
+  identity: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: Spacing.three },
+  avatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: FudsColors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  avatarLetters: { fontSize: 24, fontWeight: '900', color: FudsColors.foreground },
+  hello: { fontSize: 22, fontWeight: '900', color: '#fff' },
+  phoneLine: { marginTop: 3, fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.85)' },
+  badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  badge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: FudsColors.openBg,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
-  unverifiedPill: { backgroundColor: '#FEF2F2' },
-  verifiedText: { fontSize: 11, fontWeight: '800', color: FudsColors.openText },
+  badgeWarn: { backgroundColor: '#FEE2E2' },
+  badgeText: { fontSize: 11, fontWeight: '800', color: FudsColors.openText },
+  badgeDiet: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  badgeDietText: { fontSize: 11, fontWeight: '800', color: '#fff' },
+  addressCard: {
+    marginTop: -18,
+    marginHorizontal: Spacing.three,
+    backgroundColor: FudsColors.card,
+    borderRadius: 16,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    ...FudsShadow.md,
+  },
+  pin: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: FudsColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addressLabel: { fontSize: 11, fontWeight: '800', color: FudsColors.mutedForeground },
+  addressValue: { marginTop: 2, fontSize: 13, fontWeight: '800', color: FudsColors.foreground },
+  changeLink: { fontSize: 12, fontWeight: '800', color: FudsColors.primary },
+  shortcuts: {
+    flexDirection: 'row',
+    marginHorizontal: Spacing.three,
+    marginTop: Spacing.three,
+    gap: 8,
+  },
+  shortcut: {
+    flex: 1,
+    backgroundColor: FudsColors.card,
+    borderRadius: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+    gap: 6,
+    ...FudsShadow.sm,
+  },
+  shortcutIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shortcutLabel: { fontSize: 11, fontWeight: '800', color: FudsColors.foreground },
+  sectionTitle: {
+    marginTop: Spacing.four,
+    marginBottom: 8,
+    marginHorizontal: Spacing.three,
+    fontSize: 13,
+    fontWeight: '800',
+    color: FudsColors.mutedForeground,
+    letterSpacing: 0.4,
+  },
+  menuCard: {
+    marginHorizontal: Spacing.three,
+    backgroundColor: FudsColors.card,
+    borderRadius: 18,
+    overflow: 'hidden',
+    ...FudsShadow.sm,
+  },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: FudsColors.border,
+  },
+  menuRowLast: { borderBottomWidth: 0 },
+  menuIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: 'rgba(29,158,117,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuTitle: { fontSize: 14, fontWeight: '800', color: FudsColors.foreground },
+  menuSub: { marginTop: 2, fontSize: 12, fontWeight: '600', color: FudsColors.mutedForeground },
+  signOut: {
+    marginTop: Spacing.four,
+    marginHorizontal: Spacing.three,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+  },
+  signOutText: { fontSize: 15, fontWeight: '800', color: FudsColors.destructive },
+  editHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+    marginBottom: Spacing.three,
+  },
+  backChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: FudsColors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editTitle: { fontSize: 18, fontWeight: '900', color: FudsColors.foreground },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginHorizontal: Spacing.three,
     marginBottom: Spacing.two,
     padding: Spacing.two,
     backgroundColor: '#FEF2F2',
     borderRadius: FudsRadius.md,
   },
   errorBannerText: { flex: 1, color: FudsColors.destructive, fontSize: 12, fontWeight: '600' },
-  card: {
-    width: '100%',
-    backgroundColor: FudsColors.card,
-    borderRadius: FudsRadius.xl,
-    borderWidth: 1,
-    borderColor: FudsColors.border,
-    overflow: 'hidden',
-    ...FudsShadow.sm,
-  },
   formCard: {
-    width: '100%',
+    marginHorizontal: Spacing.three,
     backgroundColor: FudsColors.card,
-    borderRadius: FudsRadius.xl,
-    borderWidth: 1,
-    borderColor: FudsColors.border,
+    borderRadius: 18,
     padding: Spacing.three,
     gap: Spacing.three,
     ...FudsShadow.sm,
   },
-  emoji: { fontSize: 16 },
   fieldWrap: { gap: 6 },
   fieldLabel: {
     fontSize: 11,
@@ -532,7 +693,6 @@ const styles = StyleSheet.create({
     color: FudsColors.foreground,
   },
   fieldError: { fontSize: 12, color: FudsColors.destructive, fontWeight: '500' },
-  hint: { fontSize: 11, color: FudsColors.mutedForeground, lineHeight: 15 },
   chipsSection: { gap: 10 },
   chipsLabel: {
     fontSize: 11,
@@ -542,12 +702,9 @@ const styles = StyleSheet.create({
   },
   chipsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: FudsRadius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
     borderWidth: 1.5,
     borderColor: FudsColors.border,
     backgroundColor: FudsColors.background,
@@ -556,59 +713,6 @@ const styles = StyleSheet.create({
     borderColor: FudsColors.primary,
     backgroundColor: 'rgba(29,158,117,0.1)',
   },
-  chipLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: FudsColors.mutedForeground,
-  },
+  chipLabel: { fontSize: 13, fontWeight: '700', color: FudsColors.mutedForeground },
   chipLabelSelected: { color: FudsColors.primary },
-  chipCheck: { fontSize: 12, color: FudsColors.primary, fontWeight: '700' },
-  settingsRow: {
-    marginTop: Spacing.three,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: FudsColors.card,
-    borderRadius: FudsRadius.xl,
-    borderWidth: 1,
-    borderColor: FudsColors.border,
-    padding: Spacing.three,
-    ...FudsShadow.sm,
-  },
-  settingsIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(29,158,117,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsTitle: { fontSize: 15, fontWeight: '800', color: FudsColors.foreground },
-  settingsSub: { fontSize: 12, color: FudsColors.mutedForeground, marginTop: 2, fontWeight: '600' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.three,
-    borderBottomWidth: 1,
-    borderBottomColor: FudsColors.border,
-  },
-  rowLast: { borderBottomWidth: 0 },
-  rowIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(29,158,117,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowLabel: { fontSize: 13, color: FudsColors.mutedForeground, width: 72, fontWeight: '600' },
-  rowValue: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '700',
-    color: FudsColors.foreground,
-    textAlign: 'right',
-  },
 });

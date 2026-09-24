@@ -71,6 +71,7 @@ export default function OrdersScreen() {
   const [segment, setSegment] = useState<Segment>(requestedTab ?? 'cart');
   const [cart, setCart] = useState<CartRead | null>(null);
   const [orders, setOrders] = useState<OrderRead[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<OrderRead[]>([]);
   const [subscriptions, setSubscriptions] = useState<GrocerySubscriptionRead[]>([]);
   const [loading, setLoading] = useState(true);
   const [ordersLoading, setOrdersLoading] = useState(false);
@@ -94,8 +95,12 @@ export default function OrdersScreen() {
     try {
       setError(null);
       setOrdersLoading(true);
-      const data = await ordersApi.listOrders();
-      setOrders(data);
+      const [paid, pending] = await Promise.all([
+        ordersApi.listOrders('paid'),
+        ordersApi.listOrders('pending'),
+      ]);
+      setOrders(paid);
+      setPendingOrders(pending);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load orders');
     } finally {
@@ -397,6 +402,22 @@ export default function OrdersScreen() {
               </View>
             }
           />
+          {pendingOrders
+            .filter((order) => !(order.items ?? []).some((entry) => entry.marketplace_product_id))
+            .map((order) => (
+              <View key={order.id} style={[styles.orderCard, { marginHorizontal: Spacing.three, marginBottom: Spacing.two }]}>
+                <Text style={styles.orderId}>Unpaid order #{order.id}</Text>
+                <Text style={styles.orderDate}>Still in checkout — pay or it stays here, not in My Orders.</Text>
+                <Text style={styles.orderTotal}>₦{Number(order.total_price).toLocaleString()}</Text>
+                <TouchableOpacity
+                  style={styles.payNowBtn}
+                  onPress={() => openPayment(order.id, Number(order.total_price))}
+                >
+                  <Ionicons name="card-outline" size={16} color={FudsColors.primaryForeground} />
+                  <Text style={styles.payNowText}>Pay now</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
 
           {!isEmpty && (
             <View style={[styles.footer, { paddingBottom: tabClearance }]}>
@@ -437,7 +458,7 @@ export default function OrdersScreen() {
                   <Text style={styles.orderId}>Your grocery subscription</Text>
                   <Text style={styles.orderDate}>{item.item_count} items · {item.frequency}</Text>
                 </View>
-                  <View style={[styles.badge, { backgroundColor: item.payment_status === 'paid' ? FudsColors.openBg : '#FEF3C7' }]}><Text style={[styles.badgeText, { color: item.payment_status === 'paid' ? FudsColors.openText : '#B45309' }]}>{item.payment_status === 'paid' ? 'paid' : item.status}</Text></View>
+                  <View style={[styles.badge, { backgroundColor: item.payment_status === 'paid' ? FudsColors.openBg : '#FEF3C7' }]}><Text style={[styles.badgeText, { color: item.payment_status === 'paid' ? FudsColors.openText : '#B45309' }]}>{item.payment_status === 'paid' ? 'paid' : 'unpaid · editable'}</Text></View>
               </View>
               <Text style={styles.subscriptionItems}>{item.items.slice(0, 3).map((entry) => entry.name).join(', ')}</Text>
               <View style={styles.cyclePicker}>
@@ -484,7 +505,11 @@ export default function OrdersScreen() {
                     }
                   }}
                 >
-                  <Text style={styles.subscriptionCheckoutText}>{item.payment_status === 'paid' ? 'Paid · Await delivery' : 'Pay groceries'}</Text>
+                  <Text style={styles.subscriptionCheckoutText}>
+                    {item.payment_status === 'paid'
+                      ? 'Paid · Await delivery'
+                      : `Pay ₦${Number(item.total * subscriptionCycles).toLocaleString()}`}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -549,16 +574,7 @@ export default function OrdersScreen() {
                   </Text>
                 </View>
 
-                {String(item.payment_status).toLowerCase() === 'pending' ? (
-                  <TouchableOpacity
-                    style={styles.payNowBtn}
-                    activeOpacity={0.88}
-                    onPress={() => openPayment(item.id, Number(item.total_price))}
-                  >
-                    <Ionicons name="card-outline" size={16} color={FudsColors.primaryForeground} />
-                    <Text style={styles.payNowText}>Pay now</Text>
-                  </TouchableOpacity>
-                ) : null}
+
               </View>
             );
           }}
