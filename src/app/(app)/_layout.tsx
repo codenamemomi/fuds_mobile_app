@@ -2,6 +2,7 @@ import { Redirect, Stack } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { useAuth } from '@/context/auth';
+import { CartProvider } from '@/context/cart';
 import { useFudsTheme } from '@/context/theme';
 
 export default function AppLayout() {
@@ -22,24 +23,27 @@ export default function AppLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: colors.background },
-      }}
-    >
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="marketplace" options={{ headerShown: false }} />
-      <Stack.Screen name="category/[group]" options={{ headerShown: false }} />
-      <Stack.Screen name="schedule/pick-meal" options={{ headerShown: false }} />
-      <Stack.Screen name="vendor/[id]" options={{ headerShown: false }} />
-      <Stack.Screen name="settings" options={{ headerShown: false }} />
-      <Stack.Screen name="support" options={{ headerShown: false }} />
-      <Stack.Screen name="password-security" options={{ headerShown: false }} />
-      <Stack.Screen name="payment-settings" options={{ headerShown: false }} />
-      <Stack.Screen name="payment/[orderId]" options={{ headerShown: false }} />
-      <Stack.Screen name="privacy-permissions" options={{ headerShown: false }} />
-    </Stack>
+    <CartProvider>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}
+      >
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="marketplace" options={{ headerShown: false }} />
+        <Stack.Screen name="category/[group]" options={{ headerShown: false }} />
+        <Stack.Screen name="schedule/pick-meal" options={{ headerShown: false }} />
+        <Stack.Screen name="vendor/[id]" options={{ headerShown: false }} />
+        <Stack.Screen name="settings" options={{ headerShown: false }} />
+        <Stack.Screen name="support" options={{ headerShown: false }} />
+        <Stack.Screen name="password-security" options={{ headerShown: false }} />
+        <Stack.Screen name="payment-settings" options={{ headerShown: false }} />
+        <Stack.Screen name="payment/[orderId]" options={{ headerShown: false }} />
+        <Stack.Screen name="market-list" options={{ headerShown: false }} />
+        <Stack.Screen name="privacy-permissions" options={{ headerShown: false }} />
+      </Stack>
+    </CartProvider>
   );
 }
 

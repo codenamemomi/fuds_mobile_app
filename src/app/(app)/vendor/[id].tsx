@@ -17,11 +17,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
+import { useCart } from '@/context/cart';
 import {
   browseApi,
-  cartApi,
   isVendorOpen,
-  type CartRead,
   type Product,
   type VendorWithProducts,
 } from '@/lib/api';
@@ -33,6 +32,7 @@ import {
   Spacing,
 } from '@/constants/theme';
 import { safeGoBack } from '@/lib/navigation';
+import { QtyButton } from '@/components/ui/qty-button';
 
 function formatCategory(category: string | null): string {
   if (!category) return 'Vendor';
@@ -47,48 +47,66 @@ export default function VendorDetailScreen() {
   const vendorId = Number(id);
   const insets = useSafeAreaInsets();
 
+  const { cart, refreshCart, addItem: ctxAddItem, updateItem: ctxUpdateItem, getQty } = useCart();
   const [vendor, setVendor] = useState<VendorWithProducts | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [addingId, setAddingId] = useState<number | null>(null);
-  const [cart, setCart] = useState<CartRead | null>(null);
+  const [cartBusy, setCartBusy] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     if (!vendorId) return;
     (async () => {
       setLoading(true);
       try {
-        const [vendorData, cartData] = await Promise.all([
+        const [vendorData] = await Promise.all([
           browseApi.getVendor(vendorId),
-          cartApi.getCart().catch(() => null),
+          refreshCart(),
         ]);
         setVendor(vendorData);
         setProducts(vendorData.products ?? []);
-        setCart(cartData);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not load vendor');
       } finally {
         setLoading(false);
       }
     })();
-  }, [vendorId]);
+  }, [vendorId, refreshCart]);
 
   const handleAddToCart = async (productId: number) => {
     if (!vendor) return;
+    const product = products.find((p) => p.id === productId);
+    setCartBusy((b) => ({ ...b, [productId]: true }));
     setAddingId(productId);
     setError(null);
     try {
-      const updated = await cartApi.addItem({
+      await ctxAddItem({
         product_id: productId,
         vendor_id: vendor.id,
         quantity: 1,
+        price: product?.price,
+        vendor_name: vendor.business_name,
+        name: product?.name,
       });
-      setCart(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add item');
     } finally {
       setAddingId(null);
+      setCartBusy((b) => ({ ...b, [productId]: false }));
+    }
+  };
+
+  const handleRemoveFromCart = async (productId: number) => {
+    const cartItem = cart?.items?.find((i) => i.product_id === productId);
+    if (!cartItem) return;
+    setCartBusy((b) => ({ ...b, [productId]: true }));
+    try {
+      await ctxUpdateItem(cartItem, Math.max(0, cartItem.quantity - 1));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update cart');
+    } finally {
+      setCartBusy((b) => ({ ...b, [productId]: false }));
     }
   };
 
@@ -221,24 +239,47 @@ export default function VendorDetailScreen() {
               ) : null}
               <Text style={styles.productPrice}>₦{Number(item.price).toLocaleString()}</Text>
             </View>
-            <View style={styles.productImageWrap}>
+          <View style={styles.productImageWrap}>
               {item.image_url ? (
                 <Image source={{ uri: item.image_url }} style={styles.productImage} />
               ) : (
                 <Image source={{ uri: heroUri }} style={styles.productImage} />
               )}
-              <TouchableOpacity
-                style={styles.addBtn}
-                onPress={() => handleAddToCart(item.id)}
-                disabled={addingId === item.id}
-                activeOpacity={0.85}
-              >
-                {addingId === item.id ? (
-                  <ActivityIndicator size="small" color={FudsColors.primaryForeground} />
-                ) : (
-                  <Ionicons name="add" size={18} color={FudsColors.primaryForeground} />
-                )}
-              </TouchableOpacity>
+              {(() => {
+                const qty = getQty(item.id);
+                const busy = cartBusy[item.id] ?? false;
+                if (qty > 0) {
+                  return (
+                    <View style={styles.qtyControls}>
+                      <QtyButton
+                        variant="remove"
+                        onPress={() => handleRemoveFromCart(item.id)}
+                        disabled={busy}
+                      />
+                      <Text style={styles.qtyText}>{qty}</Text>
+                      <QtyButton
+                        variant="add"
+                        onPress={() => handleAddToCart(item.id)}
+                        disabled={busy}
+                      />
+                    </View>
+                  );
+                }
+                return (
+                  <TouchableOpacity
+                    style={styles.addBtn}
+                    onPress={() => handleAddToCart(item.id)}
+                    disabled={addingId === item.id || busy}
+                    activeOpacity={0.85}
+                  >
+                    {addingId === item.id ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Ionicons name="add" size={18} color={FudsColors.primaryForeground} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })()}
             </View>
           </View>
         )}
@@ -298,7 +339,7 @@ const styles = StyleSheet.create({
   },
   heroImage: { width: '100%', height: '100%', opacity: 0.85 },
   heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(8,80,65,0.25)',
   },
   heroNav: {
@@ -411,6 +452,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...FudsShadow.sm,
+  },
+  qtyControls: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: FudsColors.primary,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+    gap: 3,
+    ...FudsShadow.sm,
+  },
+  qtyBtn: {
+    // kept for legacy reference — actual button rendered by QtyButton
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  qtyText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+    minWidth: 16,
+    textAlign: 'center',
   },
   emptyText: {
     textAlign: 'center',

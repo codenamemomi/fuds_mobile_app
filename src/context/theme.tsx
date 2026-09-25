@@ -92,14 +92,25 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!ready) return;
-    // Sync React Native appearance for system components
-    if (preference === 'system') {
-      Appearance.setColorScheme('unspecified');
-    } else {
-      Appearance.setColorScheme(preference);
+    // Sync React Native appearance for system components (native only)
+    if (typeof Appearance.setColorScheme === 'function') {
+      if (preference === 'system') {
+        Appearance.setColorScheme('unspecified');
+      } else {
+        Appearance.setColorScheme(preference);
+      }
     }
-    SystemUI.setBackgroundColorAsync(colors.background).catch(() => {});
-  }, [preference, colors.background, ready]);
+
+    if (Platform.OS === 'web') {
+      if (typeof document !== 'undefined') {
+        document.documentElement.style.backgroundColor = colors.background;
+        document.body.style.backgroundColor = colors.background;
+        document.documentElement.style.colorScheme = scheme;
+      }
+    } else {
+      SystemUI.setBackgroundColorAsync(colors.background).catch(() => {});
+    }
+  }, [preference, scheme, colors.background, ready]);
 
   const setPreference = useCallback(async (p: ThemePreference) => {
     setPreferenceState(p);

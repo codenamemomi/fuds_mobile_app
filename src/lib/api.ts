@@ -445,6 +445,7 @@ export interface CartItemRead {
   product_id: number | null;
   marketplace_product_id: number | null;
   vendor_id: number | null;
+  vendor_name?: string | null;
   name: string;
   price: number;
   quantity: number;
@@ -509,6 +510,8 @@ export interface OrderRead {
 
 export interface CheckoutRequest {
   delivery_time?: string; // ISO datetime, optional
+  vendor_id?: number;
+  is_marketplace?: boolean;
 }
 
 // ─── Order endpoints ──────────────────────────────────────────────────────────

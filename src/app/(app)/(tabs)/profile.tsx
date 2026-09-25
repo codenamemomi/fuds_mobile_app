@@ -307,37 +307,6 @@ export default function ProfileScreen() {
               <Text style={styles.changeLink}>Change</Text>
             </TouchableOpacity>
 
-            <View style={styles.shortcuts}>
-              <Shortcut
-                icon="receipt"
-                tint="#E8F8F2"
-                color="#0F8A62"
-                label="Orders"
-                onPress={() => go('/(app)/(tabs)/orders?tab=history')}
-              />
-              <Shortcut
-                icon="calendar"
-                tint="#FFF4E5"
-                color="#C27803"
-                label="111 plan"
-                onPress={() => go('/(app)/(tabs)/schedule')}
-              />
-              <Shortcut
-                icon="storefront"
-                tint="#EEE8FF"
-                color="#5B4B8A"
-                label="Market"
-                onPress={() => go('/(app)/marketplace')}
-              />
-              <Shortcut
-                icon="card"
-                tint="#E7F3FF"
-                color="#1D6FA8"
-                label="Payments"
-                onPress={() => go('/payment-settings')}
-              />
-            </View>
-
             <Text style={styles.sectionTitle}>Account</Text>
             <View style={styles.menuCard}>
               <MenuRow

@@ -11,7 +11,7 @@
 
 import * as WebBrowser from 'expo-web-browser';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -87,11 +87,11 @@ export default function PaymentScreen() {
       : '—';
 
   const goToOrders = useCallback(() => {
-    // Land on My Orders (history), not the Cart segment.
+    // Land on Ongoing orders, not the Cart segment.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     router.replace({
       pathname: '/(app)/(tabs)/orders' as any,
-      params: { tab: 'history' },
+      params: { tab: 'ongoing' },
     });
   }, []);
 
@@ -264,13 +264,7 @@ export default function PaymentScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Order #{orderId}</Text>
-          <Text style={styles.summaryAmount}>{amountLabel}</Text>
-          <Text style={styles.summaryHint}>
-            Paystack · card or bank transfer. FUDS never stores your card.
-          </Text>
-        </View>
+        <OrderSummaryCard order={order} orderId={orderId} amountLabel={amountLabel} />
 
         {error ? (
           <View style={styles.errorBanner}>
@@ -435,6 +429,117 @@ export default function PaymentScreen() {
   );
 }
 
+// ─── Order Summary ────────────────────────────────────────────────────────────
+
+function OrderSummaryCard({
+  order,
+  orderId,
+  amountLabel,
+}: {
+  order: OrderRead | null;
+  orderId: number;
+  amountLabel: string;
+}) {
+  // Group items by vendor_name for multi-vendor orders
+  const vendorGroups = useMemo(() => {
+    if (!order?.items?.length) return [];
+    const map = new Map<string, typeof order.items>();
+    for (const item of order.items) {
+      const key = item.vendor_name ?? 'Vendor';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    return Array.from(map.entries()).map(([vendor, items]) => ({ vendor, items }));
+  }, [order]);
+
+  const subtotal = useMemo(() => {
+    if (!order?.items?.length) return null;
+    return order.items.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0);
+  }, [order]);
+
+  const deliveryFee = useMemo(() => {
+    if (order == null || subtotal == null) return null;
+    const diff = Number(order.total_price) - subtotal;
+    return diff > 0 ? diff : null;
+  }, [order, subtotal]);
+
+  return (
+    <View style={styles.summaryCard}>
+      {/* Header */}
+      <View style={styles.summaryHeader}>
+        <View>
+          <Text style={styles.summaryLabel}>Order #{orderId}</Text>
+        </View>
+        <View style={[styles.summaryBadge]}>
+          <Ionicons name="receipt-outline" size={15} color={FudsColors.primary} />
+          <Text style={styles.summaryBadgeText}>Summary</Text>
+        </View>
+      </View>
+
+      {/* Line items grouped by vendor */}
+      {vendorGroups.length > 0 && (
+        <View style={styles.summaryItems}>
+          {vendorGroups.map(({ vendor, items }, gi) => (
+            <View key={gi} style={gi > 0 ? styles.vendorGroupSep : undefined}>
+              {vendorGroups.length > 1 && (
+                <Text style={styles.vendorGroupLabel}>{vendor}</Text>
+              )}
+              {items.map((item, ii) => (
+                <View key={ii} style={styles.summaryLineRow}>
+                  <Text style={styles.summaryItemName} numberOfLines={2}>
+                    {item.product_name ?? 'Item'}
+                    <Text style={styles.summaryItemQty}> ×{item.quantity}</Text>
+                  </Text>
+                  <Text style={styles.summaryItemPrice}>
+                    ₦{(Number(item.price) * item.quantity).toLocaleString()}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ))}
+
+          {/* Divider */}
+          <View style={styles.summaryDivider} />
+
+          {/* Subtotal */}
+          {subtotal != null && (
+            <View style={styles.summaryLineRow}>
+              <Text style={styles.summaryTotLabel}>Subtotal</Text>
+              <Text style={styles.summaryTotValue}>
+                ₦{subtotal.toLocaleString()}
+              </Text>
+            </View>
+          )}
+
+          {/* Delivery fee (if backend embeds it in total) */}
+          {deliveryFee != null && (
+            <View style={styles.summaryLineRow}>
+              <Text style={styles.summaryTotLabel}>Delivery</Text>
+              <Text style={styles.summaryTotValue}>
+                ₦{deliveryFee.toLocaleString()}
+              </Text>
+            </View>
+          )}
+
+          {/* Total */}
+          {order && (
+            <View style={[styles.summaryLineRow, styles.summaryTotalRow]}>
+              <Text style={styles.summaryGrandLabel}>Total</Text>
+              <Text style={styles.summaryGrandValue}>
+                ₦{Number(order.total_price).toLocaleString()}
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      <Text style={styles.summaryHint}>
+        Paystack · card or bank transfer. FUDS never stores your card.
+      </Text>
+    </View>
+  );
+}
+
 function Row({
   label,
   value,
@@ -491,7 +596,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: FudsColors.border,
     padding: Spacing.four,
+    gap: Spacing.three,
     ...FudsShadow.sm,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
   summaryLabel: {
     fontSize: 12,
@@ -504,13 +615,92 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '900',
     color: FudsColors.foreground,
-    marginTop: 6,
+    marginTop: 4,
+  },
+  summaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(29,158,117,0.1)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  summaryBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: FudsColors.primary,
+  },
+  summaryItems: {
+    gap: 2,
+  },
+  vendorGroupLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: FudsColors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    marginTop: 2,
+  },
+  vendorGroupSep: {
+    marginTop: Spacing.two,
+  },
+  summaryLineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 5,
+  },
+  summaryItemName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: FudsColors.foreground,
+    lineHeight: 18,
+  },
+  summaryItemQty: {
+    fontWeight: '600',
+    color: FudsColors.mutedForeground,
+  },
+  summaryItemPrice: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: FudsColors.foreground,
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: FudsColors.border,
+    marginVertical: 6,
+  },
+  summaryTotLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: FudsColors.mutedForeground,
+  },
+  summaryTotValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: FudsColors.foreground,
+  },
+  summaryTotalRow: {
+    marginTop: 2,
+  },
+  summaryGrandLabel: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: FudsColors.foreground,
+  },
+  summaryGrandValue: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: FudsColors.primary,
   },
   summaryHint: {
     fontSize: 12,
     color: FudsColors.mutedForeground,
     fontWeight: '600',
-    marginTop: 8,
     lineHeight: 18,
   },
   errorBanner: {

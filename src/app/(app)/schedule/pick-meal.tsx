@@ -1,9 +1,15 @@
 /**
- * Pick a meal for a 111 slot (breakfast / lunch / dinner).
+ * Pick meals for a 111 slot (breakfast / lunch / dinner).
+ *
+ * UX:
+ *  - Users can add multiple meals without the screen closing.
+ *  - Each meal card shows a `+` button when qty = 0, or `− qty +` controls.
+ *  - Quantity changes are optimistic (instant UI) with background API calls.
+ *  - A sticky footer shows the total item count and a "Done" button.
  */
 
 import { useLocalSearchParams } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,6 +20,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -33,6 +44,47 @@ function asMealType(value: string | undefined): MealType {
   return MEAL_TYPES.includes(value as MealType) ? (value as MealType) : 'lunch';
 }
 
+// ─── Squishy animated button ─────────────────────────────────────────────────
+
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+
+function SquishBtn({
+  onPress,
+  children,
+  style,
+  disabled,
+}: {
+  onPress: () => void;
+  children: React.ReactNode;
+  style?: object;
+  disabled?: boolean;
+}) {
+  const scale = useSharedValue(1);
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.78, { damping: 18, stiffness: 480, mass: 0.6 });
+  };
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 11, stiffness: 300, mass: 0.6 });
+  };
+
+  return (
+    <AnimatedTouchable
+      activeOpacity={1}
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      disabled={disabled}
+      style={[style, animStyle]}
+    >
+      {children}
+    </AnimatedTouchable>
+  );
+}
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function PickMealScreen() {
   const params = useLocalSearchParams<{ meal_type?: string; date?: string; time?: string }>();
   const mealType = asMealType(params.meal_type);
@@ -44,7 +96,24 @@ export default function PickMealScreen() {
   const [products, setProducts] = useState<ProductWithVendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [addingId, setAddingId] = useState<number | null>(null);
+
+  /**
+   * Local quantity map: productId → quantity selected in this session.
+   * This is optimistic state — updated immediately, synced to server in background.
+   */
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
+
+  /**
+   * Per-product scheduled meal ID returned by the backend after the first upsert.
+   * Needed to call update/remove on subsequent changes.
+   */
+  const mealIdRef = useRef<Record<number, number>>({});
+
+  /** Tracks in-flight network ops so we can debounce rapid taps gracefully. */
+  const pendingRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+
+  const totalItems = Object.values(quantities).reduce((s, q) => s + q, 0);
+  const uniqueMeals = Object.values(quantities).filter((q) => q > 0).length;
 
   const load = useCallback(async (search: string) => {
     setError(null);
@@ -72,33 +141,100 @@ export default function PickMealScreen() {
     };
   }, [query, load]);
 
-  const pick = async (product: ProductWithVendor) => {
-    if (!date || !time) {
-      setError('Missing delivery date or time');
-      return;
-    }
-    setAddingId(product.id);
-    setError(null);
-    try {
-      await scheduleApi.upsert({
-        meal_type: mealType,
-        delivery_date: date,
-        slot_time: time,
-        product_id: product.id,
-        quantity: 1,
+  // ── Quantity helpers ────────────────────────────────────────────────────────
+
+  const syncToServer = useCallback(
+    (product: ProductWithVendor, targetQty: number) => {
+      // Cancel any pending debounced call for this product
+      if (pendingRef.current[product.id]) {
+        clearTimeout(pendingRef.current[product.id]);
+      }
+
+      pendingRef.current[product.id] = setTimeout(async () => {
+        try {
+          if (!date || !time) return;
+
+          if (targetQty <= 0) {
+            const mealId = mealIdRef.current[product.id];
+            if (mealId != null) {
+              await scheduleApi.remove(mealId);
+              delete mealIdRef.current[product.id];
+            }
+          } else {
+            const mealId = mealIdRef.current[product.id];
+            if (mealId != null) {
+              await scheduleApi.update(mealId, { quantity: targetQty });
+            } else {
+              const created = await scheduleApi.upsert({
+                meal_type: mealType,
+                delivery_date: date,
+                slot_time: time,
+                product_id: product.id,
+                quantity: targetQty,
+              });
+              mealIdRef.current[product.id] = created.id;
+            }
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Could not save meal selection');
+          // Revert optimistic update on error
+          setQuantities((prev) => {
+            const next = { ...prev };
+            if (next[product.id] === targetQty) {
+              // Still at the target that failed — revert
+              if (targetQty <= 0) {
+                delete next[product.id];
+              } else {
+                next[product.id] = targetQty - 1;
+              }
+            }
+            return next;
+          });
+        }
+      }, 220);
+    },
+    [date, time, mealType]
+  );
+
+  const handleAdd = useCallback(
+    (product: ProductWithVendor) => {
+      setQuantities((prev) => {
+        const next = { ...prev, [product.id]: (prev[product.id] ?? 0) + 1 };
+        syncToServer(product, next[product.id]);
+        return next;
       });
-      safeGoBack('/(app)/(tabs)/schedule');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add this meal');
-    } finally {
-      setAddingId(null);
-    }
-  };
+    },
+    [syncToServer]
+  );
+
+  const handleRemove = useCallback(
+    (product: ProductWithVendor) => {
+      setQuantities((prev) => {
+        const cur = prev[product.id] ?? 0;
+        const nextQty = Math.max(0, cur - 1);
+        const next = { ...prev };
+        if (nextQty === 0) {
+          delete next[product.id];
+        } else {
+          next[product.id] = nextQty;
+        }
+        syncToServer(product, nextQty);
+        return next;
+      });
+    },
+    [syncToServer]
+  );
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Nav */}
       <View style={styles.nav}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => safeGoBack('/(app)/(tabs)/schedule')}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => safeGoBack('/(app)/(tabs)/schedule')}
+        >
           <Ionicons name="arrow-back" size={20} color={FudsColors.foreground} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
@@ -107,8 +243,16 @@ export default function PickMealScreen() {
             {window.label} · {formatSlotLabel(time)} · {date}
           </Text>
         </View>
+        {totalItems > 0 && (
+          <View style={styles.badgePill}>
+            <Text style={styles.badgePillText}>
+              {totalItems} item{totalItems !== 1 ? 's' : ''}
+            </Text>
+          </View>
+        )}
       </View>
 
+      {/* Search */}
       <View style={styles.search}>
         <Ionicons name="search" size={18} color={FudsColors.mutedForeground} />
         <TextInput
@@ -119,14 +263,21 @@ export default function PickMealScreen() {
           style={styles.searchInput}
           autoCorrect={false}
         />
+        {query.length > 0 && (
+          <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}>
+            <Ionicons name="close-circle" size={18} color={FudsColors.mutedForeground} />
+          </TouchableOpacity>
+        )}
       </View>
 
+      {/* Error */}
       {error ? (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : null}
 
+      {/* List */}
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator color={FudsColors.primary} />
@@ -135,19 +286,19 @@ export default function PickMealScreen() {
         <FlatList
           data={products}
           keyExtractor={(item) => String(item.id)}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[
+            styles.list,
+            // Extra bottom padding when sticky footer is visible
+            totalItems > 0 && { paddingBottom: 120 },
+          ]}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <Text style={styles.empty}>No meals match that search.</Text>
           }
           renderItem={({ item }) => {
-            const busy = addingId === item.id;
+            const qty = quantities[item.id] ?? 0;
             return (
-              <TouchableOpacity
-                style={styles.row}
-                activeOpacity={0.88}
-                onPress={() => pick(item)}
-                disabled={addingId != null}
-              >
+              <View style={styles.row}>
                 <Image
                   source={{ uri: item.image_url || FudsImages.jollof }}
                   style={styles.thumb}
@@ -161,24 +312,74 @@ export default function PickMealScreen() {
                   </Text>
                   <Text style={styles.price}>{formatNaira(item.price)}</Text>
                 </View>
-                <View style={styles.addBtn}>
-                  {busy ? (
-                    <ActivityIndicator size="small" color={FudsColors.primaryForeground} />
-                  ) : (
-                    <Ionicons name="add" size={18} color={FudsColors.primaryForeground} />
-                  )}
-                </View>
-              </TouchableOpacity>
+
+                {/* Quantity control */}
+                {qty === 0 ? (
+                  <SquishBtn style={styles.addBtn} onPress={() => handleAdd(item)}>
+                    <Ionicons name="add" size={20} color={FudsColors.primaryForeground} />
+                  </SquishBtn>
+                ) : (
+                  <View style={styles.qtyRow}>
+                    <SquishBtn
+                      style={[
+                        styles.qtyBtn,
+                        qty === 1 && styles.qtyBtnRemove,
+                      ]}
+                      onPress={() => handleRemove(item)}
+                    >
+                      <Ionicons
+                        name={qty === 1 ? 'trash-outline' : 'remove'}
+                        size={16}
+                        color={qty === 1 ? FudsColors.destructive : FudsColors.primary}
+                      />
+                    </SquishBtn>
+
+                    <Text style={styles.qtyText}>{qty}</Text>
+
+                    <SquishBtn style={styles.addBtn} onPress={() => handleAdd(item)}>
+                      <Ionicons name="add" size={18} color={FudsColors.primaryForeground} />
+                    </SquishBtn>
+                  </View>
+                )}
+              </View>
             );
           }}
         />
+      )}
+
+      {/* Sticky footer — only visible once ≥1 meal selected */}
+      {totalItems > 0 && (
+        <View style={styles.footer}>
+          <View style={styles.footerInner}>
+            <View style={styles.footerInfo}>
+              <Text style={styles.footerCount}>
+                {uniqueMeals} meal{uniqueMeals !== 1 ? 's' : ''} selected
+              </Text>
+              <Text style={styles.footerItems}>
+                {totalItems} total item{totalItems !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.doneBtn}
+              activeOpacity={0.85}
+              onPress={() => safeGoBack('/(app)/(tabs)/schedule')}
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#fff" />
+              <Text style={styles.doneBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       )}
     </SafeAreaView>
   );
 }
 
+// ─── Styles ────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: FudsColors.background },
+
+  // Nav
   nav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -198,6 +399,17 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 18, fontWeight: '800', color: FudsColors.foreground },
   sub: { fontSize: 12, color: FudsColors.mutedForeground, marginTop: 2, fontWeight: '600' },
+
+  // Badge in header
+  badgePill: {
+    backgroundColor: FudsColors.primary,
+    borderRadius: 100,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  badgePillText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+
+  // Search
   search: {
     marginHorizontal: Spacing.three,
     marginBottom: Spacing.three,
@@ -212,6 +424,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   searchInput: { flex: 1, fontSize: 15, color: FudsColors.foreground, fontWeight: '600' },
+
+  // Error
   errorBox: {
     marginHorizontal: Spacing.three,
     marginBottom: Spacing.two,
@@ -220,7 +434,10 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   errorText: { color: FudsColors.destructive, fontSize: 13, fontWeight: '600' },
+
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
+  // List
   list: { paddingHorizontal: Spacing.three, paddingBottom: 40, gap: 10 },
   empty: {
     textAlign: 'center',
@@ -228,6 +445,8 @@ const styles = StyleSheet.create({
     marginTop: 40,
     fontWeight: '600',
   },
+
+  // Meal row card
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -243,6 +462,8 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: '800', color: FudsColors.foreground },
   vendor: { fontSize: 12, color: FudsColors.mutedForeground, marginTop: 2, fontWeight: '600' },
   price: { fontSize: 13, fontWeight: '800', color: FudsColors.primary, marginTop: 4 },
+
+  // Add button (qty = 0)
   addBtn: {
     width: 36,
     height: 36,
@@ -251,4 +472,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // Qty controls (qty > 0)
+  qtyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  qtyBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: 'rgba(29,158,117,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyBtnRemove: {
+    backgroundColor: '#FEE2E2',
+  },
+  qtyText: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: FudsColors.foreground,
+    minWidth: 20,
+    textAlign: 'center',
+  },
+
+  // Sticky Done footer
+  footer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: FudsColors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderTopColor: FudsColors.border,
+    ...FudsShadow.md,
+  },
+  footerInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 16,
+  },
+  footerInfo: { gap: 2 },
+  footerCount: { fontSize: 15, fontWeight: '800', color: FudsColors.foreground },
+  footerItems: { fontSize: 12, color: FudsColors.mutedForeground, fontWeight: '600' },
+  doneBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: FudsColors.primary,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+    borderRadius: FudsRadius.md,
+    ...FudsShadow.sm,
+  },
+  doneBtnText: { fontSize: 15, fontWeight: '900', color: '#fff', letterSpacing: 0.2 },
 });

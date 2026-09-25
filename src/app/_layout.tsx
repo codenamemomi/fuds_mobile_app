@@ -13,11 +13,11 @@ import { AuthProvider } from '@/context/auth';
 import { ThemeProvider } from '@/context/theme';
 import { Slot } from 'expo-router';
 
-SplashScreen.preventAutoHideAsync();
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
   useEffect(() => {
-    SplashScreen.hideAsync();
+    SplashScreen.hideAsync().catch(() => {});
   }, []);
 
   return (

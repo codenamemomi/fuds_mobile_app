@@ -3,9 +3,11 @@
  * Uses AddressField so reverse geocode is always editable before save.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -19,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AddressField } from '@/components/ui/address-field';
 import { FudsButton } from '@/components/ui/fuds-button';
 import { FudsColors, FudsRadius, FudsShadow, Spacing } from '@/constants/theme';
+import { useState } from 'react';
 
 type AddressEditModalProps = {
   visible: boolean;
@@ -40,11 +43,49 @@ export function AddressEditModal({
 }: AddressEditModalProps) {
   const [address, setAddress] = useState(initialAddress ?? '');
 
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const sheetY = useRef(new Animated.Value(300)).current;
+
   useEffect(() => {
     if (visible) {
       setAddress(initialAddress ?? '');
     }
   }, [visible, initialAddress]);
+
+  // Animate in/out whenever visibility changes
+  useEffect(() => {
+    if (visible) {
+      backdropOpacity.setValue(0);
+      sheetY.setValue(300);
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(sheetY, {
+          toValue: 0,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(sheetY, {
+          toValue: 300,
+          duration: 200,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible, backdropOpacity, sheetY]);
 
   const handleSave = async () => {
     const trimmed = address.trim();
@@ -53,14 +94,20 @@ export function AddressEditModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose} />
+    <Modal visible={visible} animationType="none" transparent onRequestClose={onClose}>
+      {/* Backdrop — pure fade, no translateY */}
+      <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} pointerEvents="box-none">
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      </Animated.View>
+
+      {/* Sheet — slides up from below */}
       <KeyboardAvoidingView
         behavior="padding"
         keyboardVerticalOffset={Platform.OS === 'android' ? 24 : 0}
         style={styles.sheetWrap}
+        pointerEvents="box-none"
       >
-        <View style={styles.sheet}>
+        <Animated.View style={[styles.sheet, { transform: [{ translateY: sheetY }] }]}>
           <View style={styles.handle} />
           <View style={styles.header}>
             <Text style={styles.title}>Delivery address</Text>
@@ -93,7 +140,7 @@ export function AddressEditModal({
               <ActivityIndicator size="small" color={FudsColors.primary} />
             </View>
           )}
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -101,7 +148,7 @@ export function AddressEditModal({
 
 const styles = StyleSheet.create({
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(8,80,65,0.35)',
   },
   sheetWrap: {

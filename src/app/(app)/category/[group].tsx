@@ -137,22 +137,26 @@ export default function CategoryVendorsScreen() {
                 onPress={() => goToVendor(item.id)}
                 disabled={!open}
               >
-                <Image
-                  source={{ uri: cover }}
-                  style={[styles.cover, !open && styles.coverDim]}
-                />
-                {!open ? (
-                  <View style={styles.closedOverlay}>
-                    <Text style={styles.closedTitle}>Closed</Text>
-                    <Text style={styles.closedSub}>{reopenLabel(item)}</Text>
-                  </View>
-                ) : (
-                  <View style={styles.eta}>
-                    <Text style={styles.etaText}>
-                      {formatHours(item.opening_time)}–{formatHours(item.closing_time) || 'late'}
-                    </Text>
-                  </View>
-                )}
+                <View style={styles.coverWrap}>
+                  <Image
+                    source={{ uri: cover }}
+                    style={[styles.cover, !open && styles.coverDim]}
+                  />
+                  {!open && (
+                    <View style={styles.closedOverlay}>
+                      <View style={styles.closedPill}>
+                        <Text style={styles.closedTitle}>{reopenLabel(item)}</Text>
+                      </View>
+                    </View>
+                  )}
+                  {open && (
+                    <View style={styles.eta}>
+                      <Text style={styles.etaText}>
+                        {formatHours(item.opening_time)}–{formatHours(item.closing_time) || 'late'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
                 <View style={styles.meta}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{item.business_name}</Text>
@@ -231,17 +235,34 @@ const styles = StyleSheet.create({
     ...FudsShadow.sm,
   },
   cardClosed: { opacity: 0.96 },
-  cover: { width: '100%', height: 148, backgroundColor: FudsColors.muted },
+  coverWrap: {
+    width: '100%',
+    height: 148,
+    backgroundColor: FudsColors.muted,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  cover: { width: '100%', height: '100%' },
   coverDim: { opacity: 0.55 },
   closedOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    height: 148,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.28)',
+    backgroundColor: 'rgba(0,0,0,0.42)',
   },
-  closedTitle: { color: '#fff', fontWeight: '900', fontSize: 15 },
-  closedSub: { color: 'rgba(255,255,255,0.9)', fontWeight: '600', fontSize: 12, marginTop: 4 },
+  closedPill: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closedTitle: { color: '#fff', fontWeight: '800', fontSize: 13 },
   eta: {
     position: 'absolute',
     top: 12,

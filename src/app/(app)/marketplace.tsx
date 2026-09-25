@@ -30,6 +30,7 @@ import {
   type GrocerySubscriptionRead,
   type MarketplaceProduct,
 } from '@/lib/api';
+import { router } from 'expo-router';
 import { safeGoBack } from '@/lib/navigation';
 
 type IonName = ComponentProps<typeof Ionicons>['name'];
@@ -88,6 +89,8 @@ export default function MarketplaceScreen() {
   const titleY = useRef(new Animated.Value(0)).current;
   const modalBackdropOpacity = useRef(new Animated.Value(0)).current;
   const modalSheetY = useRef(new Animated.Value(80)).current;
+  const listBackdropOpacity = useRef(new Animated.Value(0)).current;
+  const listSheetY = useRef(new Animated.Value(300)).current;
   const [heroImage, setHeroImage] = useState(HERO_IMAGES[0]);
   const [heroLine, setHeroLine] = useState(HERO_LINES[0]);
 
@@ -110,6 +113,40 @@ export default function MarketplaceScreen() {
       }),
     ]).start();
   }, [modalBackdropOpacity, modalSheetY, picked]);
+
+  useEffect(() => {
+    if (shoppingListOpen) {
+      listBackdropOpacity.setValue(0);
+      listSheetY.setValue(300);
+      Animated.parallel([
+        Animated.timing(listBackdropOpacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }),
+        Animated.timing(listSheetY, {
+          toValue: 0,
+          duration: 280,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(listBackdropOpacity, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.timing(listSheetY, {
+          toValue: 300,
+          duration: 200,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [shoppingListOpen, listBackdropOpacity, listSheetY]);
 
   const loadCatalog = useCallback(async () => {
     try {
@@ -323,7 +360,7 @@ export default function MarketplaceScreen() {
           <Ionicons name="arrow-back" size={18} color={FudsColors.foreground} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Marketplace</Text>
+          <Text style={styles.title}>Maketplace</Text>
           <Text style={styles.subtitle}>Groceries & essentials</Text>
         </View>
       </View>
@@ -337,16 +374,14 @@ export default function MarketplaceScreen() {
             {heroLine}
           </Animated.Text>
         </View>
-        <View style={styles.heroStat}>
-          <TouchableOpacity
-            style={styles.shoppingListButton}
-            onPress={openSubscriptionEditor}
-            activeOpacity={0.86}
-          >
-            <Ionicons name="list" size={17} color="#fff" />
-            <Text style={styles.shoppingListButtonText}>create maket list</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.shoppingListButton}
+          onPress={() => router.push('/(app)/market-list' as any)}
+          activeOpacity={0.86}
+        >
+          <Ionicons name="list" size={17} color="#fff" />
+          <Text style={styles.shoppingListButtonText}>Create Maket List</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={styles.searchRow} pointerEvents="box-none">
@@ -483,12 +518,22 @@ export default function MarketplaceScreen() {
       <Modal
         visible={shoppingListOpen}
         transparent
-        animationType="slide"
+        animationType="none"
         onRequestClose={() => setShoppingListOpen(false)}
       >
         <View style={styles.modalScrim}>
-          <Pressable style={styles.modalBackdrop} onPress={() => setShoppingListOpen(false)} />
-          <View style={[styles.listSheet, { paddingBottom: Math.max(insets.bottom + 12, 28) }]}>
+          <Animated.View
+            style={[styles.modalBackdrop, { opacity: listBackdropOpacity }]}
+            pointerEvents="box-none"
+          >
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShoppingListOpen(false)} />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.listSheet,
+              { paddingBottom: Math.max(insets.bottom + 12, 28), transform: [{ translateY: listSheetY }] },
+            ]}
+          >
             <View style={styles.listHeader}>
               <View>
                 <Text style={styles.sheetTitle}>Subscribe to grocery shopping</Text>
@@ -587,7 +632,7 @@ export default function MarketplaceScreen() {
             >
               {savingShoppingList ? <ActivityIndicator color="#fff" /> : <Text style={styles.createListButtonText}>{subscription ? 'Save changes' : 'Create subscription'} ({selectedEssentialIds.size})</Text>}
             </TouchableOpacity>
-          </View>
+          </Animated.View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -636,20 +681,19 @@ const styles = StyleSheet.create({
   heroCopy: { paddingHorizontal: 12, paddingBottom: 10, paddingRight: 108 },
   heroBadge: { color: FudsColors.secondary, fontWeight: '800', fontSize: 9, letterSpacing: 0.8 },
   heroTitle: { marginTop: 4, fontSize: 18, fontWeight: '900', color: '#fff' },
-  heroStat: {
+  shoppingListButton: {
     position: 'absolute',
-    right: 10,
-    top: 10,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    minWidth: 86,
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    backgroundColor: FudsColors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    ...FudsShadow.sm,
   },
-  shoppingListButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: FudsColors.primary, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 9 },
   shoppingListButtonText: { color: '#fff', fontSize: 11, fontWeight: '900' },
   frequencyLabel: { marginTop: 8, color: FudsColors.foreground, fontSize: 12, fontWeight: '800' },
   frequencyRow: { flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 4 },

@@ -5,6 +5,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useFocusEffect } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -23,6 +24,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AddressEditModal } from '@/components/ui/address-edit-modal';
 import { AnimatedPressable } from '@/components/ui/animated-pressable';
+import { QtyButton } from '@/components/ui/qty-button';
 import { FALLBACK_CATEGORIES, getCategoryVisual } from '@/constants/browse';
 import {
   BottomTabInset,
@@ -33,6 +35,7 @@ import {
   Spacing,
 } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
+import { useCart } from '@/context/cart';
 import {
   browseApi,
   isVendorOpen,
@@ -64,12 +67,15 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const listBottomPad = BottomTabInset + Math.max(insets.bottom, 8);
 
+  const { cart, refreshCart, addItem: ctxAddItem, updateItem: ctxUpdateItem, getQty } = useCart();
+
   const [categories, setCategories] = useState<BrowseCategory[]>(FALLBACK_CATEGORIES);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [featured, setFeatured] = useState<ProductWithVendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cartBusy, setCartBusy] = useState<Record<number, boolean>>({});
 
   const [addressModalOpen, setAddressModalOpen] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
@@ -108,15 +114,57 @@ export default function HomeScreen() {
     })();
   }, [loadData]);
 
+  // Refresh cart from server whenever this screen is focused (e.g. user
+  // added/removed items from the Cart tab and navigated back here).
+  useFocusEffect(
+    useCallback(() => {
+      refreshCart();
+    }, [refreshCart])
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([loadData(), refreshCart()]);
     setRefreshing(false);
-  }, [loadData]);
+  }, [loadData, refreshCart]);
 
   const goToVendor = (vendorId: number) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     router.push(`/(app)/vendor/${vendorId}` as any);
+  };
+
+  // getQty comes from useCart() — derived reactively from the shared cart state
+
+  const handleAddFeatured = async (product: ProductWithVendor) => {
+    setCartBusy((b) => ({ ...b, [product.id]: true }));
+    try {
+      await ctxAddItem({
+        product_id: product.id,
+        vendor_id: product.vendor_id,
+        quantity: 1,
+        price: product.price,
+        vendor_name: product.vendor_name,
+        name: product.name,
+      });
+    } catch {
+      // silently ignore — no disruptive error on home screen
+    } finally {
+      setCartBusy((b) => ({ ...b, [product.id]: false }));
+    }
+  };
+
+  const handleRemoveFeatured = async (product: ProductWithVendor) => {
+    const cartItem = cart?.items?.find((i) => i.product_id === product.id);
+    if (!cartItem) return;
+    setCartBusy((b) => ({ ...b, [product.id]: true }));
+    try {
+      const newQty = Math.max(0, cartItem.quantity - 1);
+      await ctxUpdateItem(cartItem, newQty);
+    } catch {
+      // silently ignore
+    } finally {
+      setCartBusy((b) => ({ ...b, [product.id]: false }));
+    }
   };
 
   const handleSaveAddress = async (address: string) => {
@@ -164,17 +212,19 @@ export default function HomeScreen() {
     if (!searchOpen) return;
 
     if (q.length < 1) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      setSearchError(null);
-      return;
+      const emptyTimer = setTimeout(() => {
+        setSearchResults([]);
+        setSearchLoading(false);
+        setSearchError(null);
+      }, 0);
+      return () => clearTimeout(emptyTimer);
     }
 
     const seq = ++searchSeq.current;
-    setSearchLoading(true);
-    setSearchError(null);
 
     const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      setSearchError(null);
       try {
         const rows = await browseApi.searchMeals(q, { limit: 20 });
         if (seq !== searchSeq.current) return;
@@ -304,38 +354,66 @@ export default function HomeScreen() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.featuredScroll}
                 >
-                  {featured.map((p) => (
-                    <TouchableOpacity
-                      key={p.id}
-                      style={styles.featuredCard}
-                      activeOpacity={0.9}
-                      onPress={() => goToVendor(p.vendor_id)}
-                    >
-                      <View style={styles.featuredImageShell}>
-                        <Image
-                          source={{
-                            uri:
-                              p.image_url ||
-                              (p.category === 'grocery_store' ||
-                              p.category === 'supermarket' ||
-                              p.category === 'local_market'
-                                ? FudsImages.groceries
-                                : FudsImages.jollof),
-                          }}
-                          style={styles.featuredImage}
-                        />
-                        <View style={styles.addFab}>
-                          <Ionicons name="add" size={16} color="#fff" />
+                  {featured.map((p) => {
+                    const qty = getQty(p.id);
+                    const busy = cartBusy[p.id] ?? false;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={styles.featuredCard}
+                        activeOpacity={0.9}
+                        onPress={() => goToVendor(p.vendor_id)}
+                      >
+                        <View style={styles.featuredImageShell}>
+                          <Image
+                            source={{
+                              uri:
+                                p.image_url ||
+                                (p.category === 'grocery_store' ||
+                                p.category === 'supermarket' ||
+                                p.category === 'local_market'
+                                  ? FudsImages.groceries
+                                  : FudsImages.jollof),
+                            }}
+                            style={styles.featuredImage}
+                          />
+                          {qty > 0 ? (
+                            <View style={styles.qtyControls}>
+                              <QtyButton
+                                variant="remove"
+                                onPress={(e) => { e.stopPropagation?.(); handleRemoveFeatured(p); }}
+                                disabled={busy}
+                              />
+                              <Text style={styles.qtyText}>{qty}</Text>
+                              <QtyButton
+                                variant="add"
+                                onPress={(e) => { e.stopPropagation?.(); handleAddFeatured(p); }}
+                                disabled={busy}
+                              />
+                            </View>
+                          ) : (
+                            <QtyButton
+                              variant="add"
+                              size={30}
+                              radius={12}
+                              backgroundColor={FudsColors.primary}
+                              tintColor="#fff"
+                              iconSize={16}
+                              style={styles.addFab}
+                              onPress={(e) => { e.stopPropagation?.(); handleAddFeatured(p); }}
+                              disabled={busy}
+                            />
+                          )}
                         </View>
-                      </View>
-                      <Text style={styles.featuredName} numberOfLines={2}>
-                        {p.name}
-                      </Text>
-                      <Text style={styles.featuredPrice}>
-                        ₦{Number(p.price).toLocaleString()}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+                        <Text style={styles.featuredName} numberOfLines={2}>
+                          {p.name}
+                        </Text>
+                        <Text style={styles.featuredPrice}>
+                          ₦{Number(p.price).toLocaleString()}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </ScrollView>
               </>
             )}
@@ -374,8 +452,7 @@ export default function HomeScreen() {
                 {!open && (
                   <View style={styles.closedOverlay}>
                     <View style={styles.closedPill}>
-                      <Text style={styles.closedTitle}>Store is closed</Text>
-                      <Text style={styles.closedSub}>{reopenLabel(item)}</Text>
+                      <Text style={styles.closedTitle}>{reopenLabel(item)}</Text>
                     </View>
                   </View>
                 )}
@@ -888,6 +965,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...FudsShadow.sm,
   },
+  qtyControls: {
+    position: 'absolute',
+    bottom: 7,
+    right: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: FudsColors.primary,
+    borderRadius: 13,
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+    gap: 3,
+    ...FudsShadow.sm,
+  },
+  qtyBtn: {
+    // kept for legacy reference — actual button rendered by QtyButton
+    width: 28,
+    height: 28,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  qtyText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+    minWidth: 18,
+    textAlign: 'center',
+  },
   featuredName: {
     marginTop: 10,
     fontSize: 12,
@@ -931,14 +1037,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   closedPill: {
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  closedTitle: { color: '#fff', fontWeight: '900', fontSize: 15 },
-  closedSub: { color: 'rgba(255,255,255,0.9)', fontWeight: '700', fontSize: 12, marginTop: 2 },
+  closedTitle: { color: '#fff', fontWeight: '800', fontSize: 13 },
   etaBadge: {
     position: 'absolute',
     bottom: 10,
